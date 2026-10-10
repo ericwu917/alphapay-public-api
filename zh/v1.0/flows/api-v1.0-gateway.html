@@ -216,56 +216,56 @@ https://{host}/api/v1.0/gateway/partners/TestPay/orders/TP201607160001/pay?redir
 
 ## 接口
 
-下表的编号在本文所有时序图中固定不变。路径从 `/api/v1.0` 之后写起（#52、#53 的地址见「概览」）；#47 到 #49 为平台调用商户的 `notify_url`。
+下表的编号在本文所有时序图中固定不变。方法与路径见各 operationId 链接；#47 到 #49 为平台调用商户的 `notify_url`。
 
-| # | 流程 | operationId | 方法与路径 | 用途 |
-|---|---|---|---|---|
-| 1 | 退款与退款通知 | [`createRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/createRefund) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}` | 对已支付订单发起退款，商户退款号即幂等键 |
-| 2 | 退款与退款通知 | [`getRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/getRefund) | `GET /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}` | 查询退款状态 |
-| 3 | 关单 | [`cancelOrder`](../api-v1.0-gateway/index.html#tag/cancel/operation/cancelOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/cancel` | 关闭未支付订单 |
-| 5 | 结果确认（通知 + 查询） | [`getOrder`](../api-v1.0-gateway/index.html#tag/order/operation/getOrder) | `GET /gateway/partners/{partner_code}/orders/{order_id}` | 按商户订单号查询订单 |
-| 6 | 对账 | [`listOrders`](../api-v1.0-gateway/index.html#tag/order/operation/listOrders) | `GET /gateway/partners/{partner_code}/orders` | 按日期、状态、支付方式分页查询订单 |
-| 7 | 对账 | [`listTransactions`](../api-v1.0-gateway/index.html#tag/transaction/operation/listTransactions) | `GET /gateway/partners/{partner_code}/transactions` | 按日查询交易流水，可分页 |
-| 8 | 对账 | [`listSettlements`](../api-v1.0-gateway/index.html#tag/settlement/operation/listSettlements) | `GET /gateway/partners/{partner_code}/settlements` | 按结算日查询结算记录（不能查当天） |
-| 9 | 对账 | [`getExchangeRate`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getExchangeRate) | `GET /gateway/partners/{partner_code}/exchange_rate` | 查询微信汇率 |
-| 10 | 对账 | [`getChannelExchangeRates`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getChannelExchangeRates) | `GET /gateway/partners/{partner_code}/channel_exchange_rate` | 按支付方式查询当前汇率 |
-| 11 | 预授权 | [`preauthorizeOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/preauthorizeOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/settle_lock` | 将已支付订单转为预授权订单，暂不结算 |
-| 12 | 预授权 | [`releasePreauthorizedOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/releasePreauthorizedOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/release_settle_lock` | 释放预授权，订单恢复结算 |
-| 17 | 跳转支付页 | [`createQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createQrcodeOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}` | 扫码下单：返回二维码与支付页地址 |
-| 18 | 在钱包或 App 内拉起 | [`createAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAppOrder) | `PUT /gateway/partners/{partner_code}/app_orders/{order_id}` | App 下单：返回交给钱包 SDK 的参数 |
-| 19 | 自行展示二维码 | [`createNativeQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createNativeQrcodeOrder) | `PUT /gateway/partners/{partner_code}/native_orders/{order_id}` | 原生二维码下单：返回二维码内容，由商户展示 |
-| 20 | 跳转支付页 | [`createUnionpayOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createUnionpayOnlineOrder) | `PUT /gateway/partners/{partner_code}/pre_card_orders/{order_id}` | 银联在线下单：返回银联卡号支付页地址 |
-| 21 | 在钱包或 App 内拉起 | [`createNativeJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createNativeJsapiOrder) | `PUT /gateway/partners/{partner_code}/native_jsapi/{order_id}` | 原生 JSAPI 下单：返回在钱包内调起支付的参数 |
-| 22 | 在钱包或 App 内拉起 | [`createMiniProgramOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createMiniProgramOrder) | `PUT /gateway/partners/{partner_code}/microapp_orders/{order_id}` | 小程序下单：返回小程序支付参数 |
-| 24 | 跳转支付页 | [`createH5Order`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createH5Order) | `PUT /h5_payment/partners/{partner_code}/orders/{order_id}` | H5 下单：返回在手机浏览器里打开的支付页地址 |
-| 25 | 跳转支付页 | [`createJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createJsapiOrder) | `PUT /jsapi_gateway/partners/{partner_code}/orders/{order_id}` | JSAPI 下单：返回在微信或支付宝内打开的支付页地址 |
-| 26 | 跳转支付页 | [`createOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createOnlineOrder) | `PUT /web_gateway/partners/{partner_code}/orders/{order_id}` | 银联或支付宝 Online 下单：返回支付页地址 |
-| 27 | 付款码收款 | [`createMicropayOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createMicropayOrder) | `PUT /micropay/partners/{partner_code}/orders/{order_id}` | 扫顾客出示的付款码完成收款 |
-| 28 | 自行展示二维码 | [`createRetailQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createRetailQrcodeOrder) | `PUT /retail_qrcode/partners/{partner_code}/orders/{order_id}` | 门店扫码下单：收银设备展示二维码给顾客扫 |
-| 29 | 在钱包或 App 内拉起 | [`createAlipayAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAlipayAppOrder) | `PUT /alipay/partners/{partner_code}/app_orders/{order_id}` | 支付宝 App 下单 |
-| 30 | 跳转支付页 | [`createAlipayGatewayOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayGatewayOrder) | `PUT /alipay/partners/{partner_code}/orders/{order_id}` | 支付宝网关下单 |
-| 31 | 跳转支付页 | [`createAlipayPlusOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayPlusOrder) | `PUT /alipay_plus/partners/{partner_code}/orders/{order_id}` | Alipay+ 下单 |
-| 32 | 跳转支付页 | [`createWechatJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createWechatJsapiOrder) | `PUT /wechat_jsapi_gateway/partners/{partner_code}/orders/{order_id}` | 微信 JSAPI 下单 |
-| 53 | 跳转支付页 | [`createCardOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createCardOrder) | `POST /pay/thirdCard/{partner_code}/preOrder` | 卡支付预下单：返回卡支付收银台地址；接口地址见「概览」 |
-| 33 | 跳转支付页 | [`openQrcodePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openQrcodePaymentPage) | `GET /gateway/partners/{partner_code}/orders/{order_id}/pay` | 扫码支付页 |
-| 34 | 跳转支付页 | [`openWechatJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openWechatJsapiPaymentPage) | `GET /wechat_jsapi_gateway/partners/{partner_code}_order_{order_id}` | 微信 JSAPI 支付页 |
-| 35 | 跳转支付页 | [`openAlipayJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayJsapiPaymentPage) | `GET /gateway/alipay/partners/{partner_code}/orders/{order_id}/app_pay` | 支付宝 JSAPI 支付页 |
-| 36 | 跳转支付页 | [`openH5PaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openH5PaymentPage) | `GET /h5_payment/partners/{partner_code}/orders/{order_id}/pay` | H5 支付页 |
-| 37 | 跳转支付页 | [`openAlipayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayOnlinePaymentPage) | `GET /alipay/partners/{partner_code}/orders/{order_id}/web_pay` | 支付宝 Online 支付页 |
-| 38 | 跳转支付页 | [`openUnionpayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayOnlinePaymentPage) | `GET /web_gateway/partners/{partner_code}/orders/{order_id}/pay` | 银联 Online 支付页 |
-| 50 | 跳转支付页 | [`openAlipayPlusWebPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusWebPaymentPage) | `GET /alipay_plus/partners/{partner_code}/orders/{order_id}/web_pay` | Alipay+ 网页支付页 |
-| 51 | 跳转支付页 | [`openAlipayPlusAppPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusAppPaymentPage) | `GET /alipay_plus/partners/{partner_code}/orders/{order_id}/app_pay` | Alipay+ 移动端支付页 |
-| 52 | 跳转支付页 | [`openCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openCardPaymentPage) | `GET /creditCardGateway` | 卡支付收银台，地址由卡支付预下单（#53）返回 |
-| 54 | 跳转支付页 | [`openUnionpayCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayCardPaymentPage) | `GET /card_payment_view/partners/{partner_code}/orders/{order_id}/view` | 银联卡号支付页，付款人在页内输入银联卡信息 |
-| 55 | 跳转支付页 | [`openHostedPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openHostedPaymentPage) | `GET /payment/common/partners/{partner_code}/orders/{platform_order_id}/web_form` | 托管支付页，由平台引导付款人完成支付 |
-| 39 | 委托代扣 | [`createAutodebitAppContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitAppContract) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}` | App 签约：返回在商户 App 内调起渠道签约的参数 |
-| 40 | 委托代扣 | [`getAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/getAutodebitContract) | `GET /auto_debit/partners/{partner_code}/contract/{contract_no}` | 合约查询：返回合约状态 |
-| 41 | 委托代扣 | [`createAutodebitH5Contract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitH5Contract) | `POST /auto_debit/partners/{partner_code}/contract/h5/{contract_no}` | H5 签约：返回签约页地址 |
-| 42 | 委托代扣 | [`payAutodebitOrder`](../api-v1.0-gateway/index.html#tag/autodebit/operation/payAutodebitOrder) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}/orders/{order_id}/pay` | 扣款：按已签约的合约发起扣款，付款人无需确认 |
-| 43 | 委托代扣 | [`terminateAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/terminateAutodebitContract) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}/terminate` | 解约：解约后合约不再受理扣款 |
-| 47 | 结果确认（通知 + 查询） | [`onPaymentSucceeded`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onPaymentSucceeded) | `POST {notify_url}` | 支付成功通知 |
-| 48 | 退款与退款通知 | [`onRefundResult`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onRefundResult) | `POST {notify_url}` | 退款通知 |
-| 49 | 委托代扣 | [`onAutodebitContractStatusChanged`](../api-v1.0-gateway-webhook/index.html#tag/autodebit-notify/operation/onAutodebitContractStatusChanged) | `POST {notify_url}` | 代扣签约状态通知 |
+| # | 流程 | operationId | 用途 |
+|---|---|---|---|
+| 1 | 退款与退款通知 | [`createRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/createRefund) | 对已支付订单发起退款，商户退款号即幂等键 |
+| 2 | 退款与退款通知 | [`getRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/getRefund) | 查询退款状态 |
+| 3 | 关单 | [`cancelOrder`](../api-v1.0-gateway/index.html#tag/cancel/operation/cancelOrder) | 关闭未支付订单 |
+| 5 | 结果确认（通知 + 查询） | [`getOrder`](../api-v1.0-gateway/index.html#tag/order/operation/getOrder) | 按商户订单号查询订单 |
+| 6 | 对账 | [`listOrders`](../api-v1.0-gateway/index.html#tag/order/operation/listOrders) | 按日期、状态、支付方式分页查询订单 |
+| 7 | 对账 | [`listTransactions`](../api-v1.0-gateway/index.html#tag/transaction/operation/listTransactions) | 按日查询交易流水，可分页 |
+| 8 | 对账 | [`listSettlements`](../api-v1.0-gateway/index.html#tag/settlement/operation/listSettlements) | 按结算日查询结算记录（不能查当天） |
+| 9 | 对账 | [`getExchangeRate`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getExchangeRate) | 查询微信汇率 |
+| 10 | 对账 | [`getChannelExchangeRates`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getChannelExchangeRates) | 按支付方式查询当前汇率 |
+| 11 | 预授权 | [`preauthorizeOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/preauthorizeOrder) | 将已支付订单转为预授权订单，暂不结算 |
+| 12 | 预授权 | [`releasePreauthorizedOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/releasePreauthorizedOrder) | 释放预授权，订单恢复结算 |
+| 17 | 跳转支付页 | [`createQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createQrcodeOrder) | 扫码下单：返回二维码与支付页地址 |
+| 18 | 在钱包或 App 内拉起 | [`createAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAppOrder) | App 下单：返回交给钱包 SDK 的参数 |
+| 19 | 自行展示二维码 | [`createNativeQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createNativeQrcodeOrder) | 原生二维码下单：返回二维码内容，由商户展示 |
+| 20 | 跳转支付页 | [`createUnionpayOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createUnionpayOnlineOrder) | 银联在线下单：返回银联卡号支付页地址 |
+| 21 | 在钱包或 App 内拉起 | [`createNativeJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createNativeJsapiOrder) | 原生 JSAPI 下单：返回在钱包内调起支付的参数 |
+| 22 | 在钱包或 App 内拉起 | [`createMiniProgramOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createMiniProgramOrder) | 小程序下单：返回小程序支付参数 |
+| 24 | 跳转支付页 | [`createH5Order`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createH5Order) | H5 下单：返回在手机浏览器里打开的支付页地址 |
+| 25 | 跳转支付页 | [`createJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createJsapiOrder) | JSAPI 下单：返回在微信或支付宝内打开的支付页地址 |
+| 26 | 跳转支付页 | [`createOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createOnlineOrder) | 银联或支付宝 Online 下单：返回支付页地址 |
+| 27 | 付款码收款 | [`createMicropayOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createMicropayOrder) | 扫顾客出示的付款码完成收款 |
+| 28 | 自行展示二维码 | [`createRetailQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createRetailQrcodeOrder) | 门店扫码下单：收银设备展示二维码给顾客扫 |
+| 29 | 在钱包或 App 内拉起 | [`createAlipayAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAlipayAppOrder) | 支付宝 App 下单 |
+| 30 | 跳转支付页 | [`createAlipayGatewayOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayGatewayOrder) | 支付宝网关下单 |
+| 31 | 跳转支付页 | [`createAlipayPlusOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayPlusOrder) | Alipay+ 下单 |
+| 32 | 跳转支付页 | [`createWechatJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createWechatJsapiOrder) | 微信 JSAPI 下单 |
+| 53 | 跳转支付页 | [`createCardOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createCardOrder) | 卡支付预下单：返回卡支付收银台地址；接口地址见「概览」 |
+| 33 | 跳转支付页 | [`openQrcodePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openQrcodePaymentPage) | 扫码支付页 |
+| 34 | 跳转支付页 | [`openWechatJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openWechatJsapiPaymentPage) | 微信 JSAPI 支付页 |
+| 35 | 跳转支付页 | [`openAlipayJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayJsapiPaymentPage) | 支付宝 JSAPI 支付页 |
+| 36 | 跳转支付页 | [`openH5PaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openH5PaymentPage) | H5 支付页 |
+| 37 | 跳转支付页 | [`openAlipayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayOnlinePaymentPage) | 支付宝 Online 支付页 |
+| 38 | 跳转支付页 | [`openUnionpayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayOnlinePaymentPage) | 银联 Online 支付页 |
+| 50 | 跳转支付页 | [`openAlipayPlusWebPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusWebPaymentPage) | Alipay+ 网页支付页 |
+| 51 | 跳转支付页 | [`openAlipayPlusAppPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusAppPaymentPage) | Alipay+ 移动端支付页 |
+| 52 | 跳转支付页 | [`openCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openCardPaymentPage) | 卡支付收银台，地址由卡支付预下单（#53）返回 |
+| 54 | 跳转支付页 | [`openUnionpayCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayCardPaymentPage) | 银联卡号支付页，付款人在页内输入银联卡信息 |
+| 55 | 跳转支付页 | [`openHostedPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openHostedPaymentPage) | 托管支付页，由平台引导付款人完成支付 |
+| 39 | 委托代扣 | [`createAutodebitAppContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitAppContract) | App 签约：返回在商户 App 内调起渠道签约的参数 |
+| 40 | 委托代扣 | [`getAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/getAutodebitContract) | 合约查询：返回合约状态 |
+| 41 | 委托代扣 | [`createAutodebitH5Contract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitH5Contract) | H5 签约：返回签约页地址 |
+| 42 | 委托代扣 | [`payAutodebitOrder`](../api-v1.0-gateway/index.html#tag/autodebit/operation/payAutodebitOrder) | 扣款：按已签约的合约发起扣款，付款人无需确认 |
+| 43 | 委托代扣 | [`terminateAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/terminateAutodebitContract) | 解约：解约后合约不再受理扣款 |
+| 47 | 结果确认（通知 + 查询） | [`onPaymentSucceeded`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onPaymentSucceeded) | 支付成功通知 |
+| 48 | 退款与退款通知 | [`onRefundResult`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onRefundResult) | 退款通知 |
+| 49 | 委托代扣 | [`onAutodebitContractStatusChanged`](../api-v1.0-gateway-webhook/index.html#tag/autodebit-notify/operation/onAutodebitContractStatusChanged) | 代扣签约状态通知 |
 
 ## 通知处理
 
