@@ -1,0 +1,2983 @@
+openapi: 3.1.0
+info:
+  title: AlphaPay Open API v1.0
+  version: '1.0'
+  description: |
+    面向外部商户的 v1.0 gateway 对称签名支付 API。
+    base path `/api/v1.0`。
+    请求以对称签名认证：签名三要素 `time`、`nonce_str`、`sign` 以 query 参数传递，算法见安全方案 `gatewaySignV1`。
+
+    **请求头**：除支付页（浏览器入口，见「支付页约定」）外，请求头 `Accept` 须为 `application/json`；
+    PUT / POST 请求的 `Content-Type` 须为 `application/json`；字符集 UTF-8。
+    `Accept` 含 `text/html` 时，失败结果不以 JSON 错误信封返回，而是跳转至平台错误页。
+
+    **时间与日期**：本 API 所有 `yyyy-MM-dd HH:mm:ss` / `yyyyMMddHHmmss` 时间字段与 `yyyyMMdd` 日期
+    （含订单列表与交易流水的查询参数 `date`）均按 **UTC-8**；结算记录查询的 `date` 为结算日。
+
+    **金额单位**：本 API 的金额默认以给定币种的最小计价单位整数表示（对有两位小数的币种，`100` 表示 `1.00`）。
+    下列三处例外，**单位为元**（币种主单位小数，如 `10.50`）：
+
+    - 订单列表（`listOrders`）响应 `data[]` 与 `analysis` 中的金额；
+    - 卡支付预下单（`createCardOrder`）请求的 `amount` 与 `tipAmount`；
+    - 支付通知的 `clearing_amount`（见 Webhook 参考）。
+
+    **错误提示多语言**：系统错误提示支持中文 / 英文，按请求头 `Accept-Language` 自动选择。
+    **仅影响错误提示文案**——错误码 `return_code` 与业务字段不随语言变化。
+
+    ## 下单通用规则
+
+    各下单接口的通用规则：
+
+    - **商户订单号**（path `order_id`）在同一商户下唯一。以同一订单号重复下单不会新建订单，按下列规则处理：
+      - 该单已支付：返回 `ORDER_PAID`；
+      - 该单已关闭：返回 `ORDER_CLOSED`；
+      - 该单正在处理，或同一订单号并发下单：返回 `DUPLICATE_ORDER_ID`；
+      - 其余情形（含请求内容与首次下单不同）返回该单既有结果（`result_code=EXISTS`），订单内容以首次下单为准。
+    - **订单有效期**：未支付订单超过有效期即失效（默认 5 分钟，商户可在商户后台调整）。
+      以失效订单的订单号再次下单同样按上条处理、不会重新开单；需要重新收款时以新的商户订单号下单。
+    - **订单描述** `description`：上限 128 字符。
+    - **请求字段格式**：`currency` 为标价币种，可用的标价币种以商户开通情况为准（至少含商户的结算币种与 `CNY`），省略时取商户的结算币种；
+      `notify_url` 须以 `http://` 或 `https://` 开头，且只含字母、数字、下划线与 `.` `-` `/` `:` `?` `&` `=`；
+      `redirect` 须为带协议头的完整地址（如 `https://…`）。
+      不符合时返回 `PARAM_INVALID`。
+    - **CNY 标价**：以 `CNY` 标价的订单折合结算币种后须不低于 0.01。
+    - **支付页**：响应中的 `pay_url` 指向本 API 的支付页（见「支付页约定」）；跳转至校验签名的支付页前，商户须在其上追加签名三元组与
+      `redirect`；无需签名的入口见各入口说明。详见 `pay_url` 字段说明。
+    - **错误码**（`return_code`）：通用码见 `GatewayErrorV1`；另有 `ORDER_PAID` / `ORDER_CLOSED` /
+      `DUPLICATE_ORDER_ID`；H5 下单另有 `SECONDARY_MERCHANT_ID_INVALID`；付款码被扫另有 `AUTHCODEEXPIRE` / `NOTENOUGH` /
+      `NOTSUPORTCARD` / `AUTH_CODE_ERROR` / `AUTH_CODE_INVALID`。
+
+    ## 支付页约定
+
+    支付页（**浏览器入口，非 JSON API**）。下单响应的 `pay_url` 指向这些入口；商户在其上追加 query 签名三元组
+    （`time` / `nonce_str` / `sign`，每次跳转重新生成）与 `redirect` 后，把付款人浏览器带到该地址。
+    付款人在页内完成支付后，浏览器按 `redirect` 跳回商户页面。跳回不代表支付成功，支付结果以订单查询的结果为准。
+
+    本参考约定的是入口路径、query 参数、错误码与按 `redirect` 跳回；页面呈现、页内交互与中间跳转链（含 302 的目标地址）不属于约定。
+
+    **签名与重复打开**：校验签名的支付页对签名三元组的时间窗要求与 API 接口相同（`time` 与服务器时间相差须小于 5 分钟）。
+    同一商户同一组 `time` + `nonce_str` 在首次使用时与所请求的地址绑定：同一支付页地址可用这组要素在时间窗内重复打开
+    （付款人刷新、返回不会被拒）；这组要素用于其他地址或任一 API 接口时返回 `SIGN_EXPIRED`。
+    部分支付页无需签名，见各入口说明。支付页忽略各入口未列出的查询参数。
+
+    **错误码**（`return_code`）：`ORDER_NOT_EXIST`；订单已支付返回 `ORDER_PAID`，已关闭返回 `ORDER_CLOSED`；
+    以及 `GatewayErrorV1` 所列通用码。
+    浏览器请求（`Accept` 含 `text/html`）失败时跳转至平台错误页，不返回 JSON 错误信封。
+servers:
+  - url: https://{host}/api/v1.0
+    variables:
+      host:
+        default: api.example.com
+        description: 接入域名由平台提供，两代共用
+security:
+  - gatewaySignV1: []
+tags:
+  - name: placing-browser
+    x-displayName: 浏览器下单
+    description: 付款人在浏览器中完成支付的下单：扫码、原生二维码、Online、银联在线、支付宝网关、Alipay+、H5、卡支付预下单。通用规则见概览「下单通用规则」。
+  - name: placing-wallet-web
+    x-displayName: 微信或支付宝内网页下单
+    description: 付款人在微信或支付宝内打开的网页中支付的下单：JSAPI、微信 JSAPI、原生 JSAPI。通用规则见概览「下单通用规则」。
+  - name: placing-app
+    x-displayName: App 与小程序下单
+    description: 在商户 App 或小程序内调起支付的下单：App、支付宝 App、小程序。通用规则见概览「下单通用规则」。
+  - name: placing-retail
+    x-displayName: 门店下单
+    description: 门店收银设备下单：付款码被扫、门店扫码。通用规则见概览「下单通用规则」。
+  - name: payment-page
+    x-displayName: 支付页
+    description: 下单响应 `pay_url` 指向的浏览器入口（非 JSON API），约定见概览「支付页约定」。
+  - name: order
+    x-displayName: 订单查询
+    description: 单笔订单查询与分页订单列表。
+  - name: refund
+    x-displayName: 退款
+    description: 创建退款与查询退款状态。
+  - name: cancel
+    x-displayName: 关单
+    description: 关闭未支付订单。
+  - name: preauth
+    x-displayName: 预授权
+    description: 预授权（支付成功但暂不结算的订单）：将已支付订单转为预授权、释放预授权。
+  - name: transaction
+    x-displayName: 交易流水
+    description: 按日查询交易流水。
+  - name: settlement
+    x-displayName: 结算记录
+    description: 按结算日查询结算记录。
+  - name: exchange-rate
+    x-displayName: 汇率
+    description: 汇率查询与分支付方式汇率查询。
+  - name: autodebit
+    x-displayName: 委托代扣
+    description: 委托代扣签约、合约查询、扣款与解约。
+paths:
+  /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}:
+    parameters:
+      - $ref: '#/components/parameters/ShortId'
+      - $ref: '#/components/parameters/OrderId'
+      - $ref: '#/components/parameters/RefundId'
+      - $ref: '#/components/parameters/SignTime'
+      - $ref: '#/components/parameters/SignNonce'
+      - $ref: '#/components/parameters/Sign'
+    put:
+      tags:
+        - refund
+      operationId: createRefund
+      summary: 创建退款
+      description: |
+        对已支付订单退款。`refund_id`（商户退款号）为必填路径参数，用作幂等键。请求 `fee` 与响应 `amount`
+        均以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。
+
+        path `order_id` 也可传平台订单号或银联交易号，解析方式同单订单查询。
+
+        **幂等**：退款号在订单所属商户范围内唯一。同一退款号重复提交不会重复退款，返回首次受理的结果，响应另带该退款当前的
+        `result_code`；首次因商户可用余额不足失败或进入审核的，重复提交返回该笔退款及其当前 `result_code`
+        （如 `CREATE_FAILED`、`WAITING`）。退款号已用于其他订单，或与首次提交的金额不一致，返回 `REFUND_MISMATCH`。
+        一个退款号只对应一笔退款，退款失败后以新的退款号重新发起。
+
+        **退款规则**：一笔订单可多次退款；各次退款累计金额不得超过该订单的实际支付金额
+        （单订单查询的 `real_fee`——付款人支付的服务费同样可退）；退款币种与原订单相同。
+        主商户开通相应权限后，可为其子商户的订单发起退款；同一主商户下开通互退的子商户之间可互相发起退款。
+
+        **错误码**（`return_code`）：下列码，以及 `GatewayErrorV1` 所列通用码。
+
+        - `ORDER_NOT_EXIST`：订单不存在，或不在本商户可退款的范围内。
+        - `ORDER_NOT_PAID`：订单尚未支付。
+        - `ORDER_CLOSED`：订单已关闭或支付失败。
+        - `REFUND_MISMATCH`：退款号已用于其他订单，或与首次提交的金额不一致。
+        - `INVALID_REFUND_AMOUNT`：退款金额超出该订单当前可退金额。
+        - `FULL_REFUND_COMPLETED`：该订单已全额退款。
+        - `EXIST_PROCESSING_REFUND`：该订单的前一笔退款仍在创建中，可稍后重试或调用退款查询。
+        - `REFUND_VALID_DATE_EXCEED`：订单已超出可退期限。
+        - `REFUND_NOT_ENOUGH_BALANCE`：商户可用余额不足以支付本次退款，退款失败；补足余额后以新的退款号重新发起。
+        - `REFUND_NO_PERMISSION`：该商户未开通退款。
+        - `MERCHANT_FROZEN`：该商户已被平台暂停交易。
+        - `PRE_AUTH_ORDER`：预授权订单在释放前不可经本接口退款。
+        - `REFUND_NEED_REVIEW`：退款进入平台审核；审核结果以退款查询为准（审核期间状态为
+          `WAITING`，未通过或被撤回为 `CREATE_FAILED`）；请求传入 `notify_url` 时，审核通过且退款被渠道受理后推送退款通知。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequestV1'
+      responses:
+        '200':
+          description: 退款结果（成功或业务失败，见 result_code / 错误信封）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RefundResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+    get:
+      tags:
+        - refund
+      operationId: getRefund
+      summary: 查询退款状态
+      description: |
+        查询退款状态。响应结构与创建退款相同。进入平台审核的退款同样可按退款号查询，审核期间状态为 `WAITING`。
+
+        path `order_id` 也可传平台订单号或银联交易号，解析方式同单订单查询。
+
+        **错误码**（`return_code`）：`ORDER_NOT_EXIST` / `ORDER_NOT_PAID`（订单尚未支付、无退款）/ `REFUND_NOT_EXIST` /
+        `REFUND_MISMATCH`（该退款号对应的退款不属于所查订单），以及 `GatewayErrorV1` 所列通用码。
+      responses:
+        '200':
+          description: 退款查询结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RefundResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders/{order_id}/cancel:
+    put:
+      tags:
+        - cancel
+      operationId: cancelOrder
+      summary: 关单（只关未支付订单）
+      description: |
+        关闭尚未支付的订单，订单关闭后不再接受支付。订单已关闭、已失效或已失败时同样返回成功。
+
+        path `order_id` 也可传平台订单号或银联交易号，解析方式同单订单查询。
+
+        **错误码**（`return_code`）：订单已支付返回 `ORDER_PAID`；订单不存在返回 `ORDER_NOT_EXIST`；
+        关闭失败返回 `ORDER_CANCEL_FAILED`；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 关单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SimpleResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders/{order_id}:
+    get:
+      tags:
+        - order
+      operationId: getOrder
+      summary: 单订单查询
+      description: |
+        按商户订单号查询订单状态与明细。金额以最小计价单位整数表示；`result_code` 取值见响应结构。
+
+        path `order_id` 也可传平台订单号或银联交易号：按商户订单号查不到时，再依次按平台订单号、银联交易号查找。
+
+        **错误码**（`return_code`）：`ORDER_NOT_EXIST`，以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - name: order_id
+          in: path
+          required: true
+          description: |
+            商户订单号（同一商户下唯一；下单时最长 50 字符）。也可传平台订单号或银联交易号（见本接口说明）。
+            传入不存在的单号（含超过 50 字符的单号）时返回 `ORDER_NOT_EXIST`。
+          schema:
+            type: string
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 订单查询结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OrderQueryResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+    put:
+      tags:
+        - placing-browser
+      operationId: createQrcodeOrder
+      summary: 通用扫码下单
+      description: 通用规则见概览「下单通用规则」。通用扫码下单。响应包含支付凭据，凭据字段随支付方式而异。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayQRCodeOrder'
+      responses:
+        '200':
+          description: 下单结果（凭据字段随支付方式）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders:
+    get:
+      tags:
+        - order
+      operationId: listOrders
+      summary: 订单列表，分页（金额单位：元）
+      description: |
+        按日期、状态、支付方式分页查询订单列表（`page` / `limit`）。
+        本接口的金额以币种主单位小数表示（如 `1.05`），本 API 其他接口以最小计价单位整数表示，详见 `OrderListItemV1`；
+        `status` 的取值与单订单查询的 `result_code` 不同。
+
+        **错误码**（`return_code`）：见 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+        - name: page
+          in: query
+          required: false
+          description: 页码（从 1 起，默认 1）
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          description: 每页条数（默认 10，最大 500；超过按 500 取，响应 `pagination.limit` 为实际生效值）
+          schema:
+            type: integer
+            default: 10
+        - name: date
+          in: query
+          required: false
+          description: 订单创建日期 yyyyMMdd；省略则查询全部订单
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: 订单状态过滤（默认 ALL）
+          schema:
+            $ref: '#/components/schemas/OrderStatusFilterV1'
+        - name: channel
+          in: query
+          required: false
+          description: 支付方式过滤（默认 ALL）
+          schema:
+            $ref: '#/components/schemas/ChannelFilterV1'
+      responses:
+        '200':
+          description: 订单列表结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OrderListResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/transactions:
+    get:
+      tags:
+        - transaction
+      operationId: listTransactions
+      summary: 交易流水查询（按日）
+      description: |
+        按日期查询交易流水（金额以最小计价单位整数表示）。不传 `page` 与 `limit` 时返回该日全部流水；
+        传入任一时分页返回。
+
+        **范围**：该商户当日的付款、退款、退款失败回冲、返现与平台调整等交易记录（含非经本 API 发起的交易）；不含结算划款。一笔支付单或退款单可对应多条流水。
+
+        **错误码**（`return_code`）：见 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+        - name: date
+          in: query
+          required: true
+          description: 交易日期 yyyyMMdd（必填）
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: 页码（从 1 起，默认 1）。不传 `page` 与 `limit` 时返回该日全部流水；传入时分页
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          description: 每页条数（分页时默认 10，最大 500；超过按 500 取，响应 `pagination.limit` 为实际生效值）
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 流水查询结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TransactionListResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/settlements:
+    get:
+      tags:
+        - settlement
+      operationId: listSettlements
+      summary: 结算记录查询（按结算日、不可当天）
+      description: |
+        按结算日查询结算记录（不可查询当天；金额以最小计价单位整数表示）。
+
+        **范围**：指定结算日（不可为当天）该商户当次结算所含的明细：付款、退款、退款失败回冲、返现与平台调整等交易记录，不含结算划款；
+        `settle_from` / `settle_to` 为该次结算覆盖的交易日期范围。
+
+        **错误码**（`return_code`）：见 `GatewayErrorV1` 所列通用码；查询当天返回 `INVALID_DATE`。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+        - name: date
+          in: query
+          required: true
+          description: 结算日 yyyyMMdd（必填、不可为当天）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 结算查询结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SettlementResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/exchange_rate:
+    get:
+      tags:
+        - exchange-rate
+      operationId: getExchangeRate
+      summary: 汇率查询（微信支付）
+      description: 查询汇率。成功时返回 `return_code` 与 `rate`。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 汇率结果（成功体或错误信封，判 return_code）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - return_code
+                    properties:
+                      return_code:
+                        type: string
+                        const: SUCCESS
+                      rate:
+                        type: number
+                        description: 汇率（十进制数）
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/channel_exchange_rate:
+    get:
+      tags:
+        - exchange-rate
+      operationId: getChannelExchangeRates
+      summary: 分支付方式汇率查询
+      description: |
+        按支付方式查询汇率。各 `*_rate` 字段无值时不返回。
+        **汇率仅供参考**：实际交易以成交时的实时汇率为准。
+
+        **错误码**（`return_code`）：见 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 分支付方式汇率结果（成功体或错误信封，判 return_code）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required:
+                      - return_code
+                    properties:
+                      return_code:
+                        type: string
+                        const: SUCCESS
+                      wechat_rate:
+                        type: number
+                        description: 微信支付汇率
+                      alipay_retail_rate:
+                        type: number
+                        description: 支付宝店内支付汇率
+                      alipay_online_rate:
+                        type: number
+                        description: 支付宝线上支付汇率
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders/{order_id}/settle_lock:
+    put:
+      tags:
+        - preauth
+      operationId: preauthorizeOrder
+      summary: 将已支付订单转为预授权
+      description: |
+        将已支付且尚未进入结算的订单整笔转为预授权，暂停其结算，直至商户释放预授权。
+        成功时 `result_code` 为 `SUCCESS`。
+
+        path `order_id` 也可传平台订单号或银联交易号，解析方式同单订单查询。
+
+        **错误码**（`return_code`）：订单不存在返回 `ORDER_NOT_EXIST`；订单尚未支付返回 `ORDER_NOT_PAID`；订单已处于预授权中（尚未释放）或已进入结算返回
+        `ORDER_LOCKED`；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 转为预授权的结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SimpleResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders/{order_id}/release_settle_lock:
+    put:
+      tags:
+        - preauth
+      operationId: releasePreauthorizedOrder
+      summary: 释放预授权
+      description: |
+        释放预授权，订单恢复参与结算。成功时 `result_code` 为 `SUCCESS`。
+
+        path `order_id` 也可传平台订单号或银联交易号，解析方式同单订单查询。
+
+        **错误码**（`return_code`）：订单不存在返回 `ORDER_NOT_EXIST`；订单尚未支付返回 `ORDER_NOT_PAID`；订单不处于预授权中返回 `NOT_PRE_AUTH_ORDER`；
+        以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 释放结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SimpleResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/app_orders/{order_id}:
+    put:
+      tags:
+        - placing-app
+      operationId: createAppOrder
+      summary: SDK / App 下单
+      description: 通用规则见概览「下单通用规则」。SDK / App 下单。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewaySDKOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/native_orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createNativeQrcodeOrder
+      summary: 原生二维码下单
+      description: 通用规则见概览「下单通用规则」。原生码下单。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayNativeQROrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/pre_card_orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createUnionpayOnlineOrder
+      summary: 银联在线下单
+      description: |
+        通用规则见概览「下单通用规则」。
+
+        **银联在线下单**。支付方式固定为银联在线（`channel` 受理，不影响处理），持卡人在银联卡号支付页输入卡信息，商户不传卡号。
+        响应 `pay_url` 指向银联卡号支付页（见 `openUnionpayCardPaymentPage`），跳转前商户系统可在其上追加 `redirect`。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayCardPreOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/native_jsapi/{order_id}:
+    put:
+      tags:
+        - placing-wallet-web
+      operationId: createNativeJsapiOrder
+      summary: 原生 JSAPI 下单
+      description: |
+        通用规则见概览「下单通用规则」。
+
+        原生 JSAPI 下单：响应直接返回唤起微信 / 支付宝 JSAPI 支付所需的 `sdk_params`。
+        须传 `customer_id`（微信为公众号 OpenId、支付宝为 UserId）；微信场景另须传 `appid`（公众号 appid）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayNativeJsApiOrderV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/microapp_orders/{order_id}:
+    put:
+      tags:
+        - placing-app
+      operationId: createMiniProgramOrder
+      summary: 小程序下单
+      description: 通用规则见概览「下单通用规则」。小程序下单（微信 / 支付宝）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayMicroAppOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /h5_payment/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createH5Order
+      summary: H5 下单
+      description: 通用规则见概览「下单通用规则」。H5 支付下单。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayH5Order'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /jsapi_gateway/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-wallet-web
+      operationId: createJsapiOrder
+      summary: JSAPI 下单
+      description: 通用规则见概览「下单通用规则」。JSAPI 下单。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayJSAPIOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /web_gateway/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createOnlineOrder
+      summary: 银联 / 支付宝 Online 下单
+      description: |
+        通用规则见概览「下单通用规则」。
+
+        银联 / 支付宝 Online 下单（PC 网站），可用支付方式见请求体 `channel`（本接口不接受 `Wechat`）。
+        创建后把付款人浏览器带到响应 `pay_url`（追加签名三元组与 `redirect`，见概览「支付页约定」），进入银联 / 支付宝页面完成支付。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebGatewayOrderV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /micropay/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-retail
+      operationId: createMicropayOrder
+      summary: 付款码被扫（B 扫 C）
+      description: 通用规则见概览「下单通用规则」。付款码被扫下单（须传 `device_id` 与 `auth_code`；支付方式由 `auth_code` 自动识别）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayMicroPayOrder'
+      responses:
+        '200':
+          description: 受理结果，含支付状态与金额，结构与其他下单接口不同；新建订单返回 `PAYING`，同步得出结果时为 `PAY_SUCCESS` 或 `PAY_FAIL`，各值含义见 `MicroPayResultV1`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MicroPayResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /retail_qrcode/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-retail
+      operationId: createRetailQrcodeOrder
+      summary: 门店扫码下单
+      description: 通用规则见概览「下单通用规则」。门店扫码下单（须传 `device_id`）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayRetailQRCodeOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RetailQRCodeOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /alipay/partners/{partner_code}/app_orders/{order_id}:
+    put:
+      tags:
+        - placing-app
+      operationId: createAlipayAppOrder
+      summary: 支付宝 App SDK 下单
+      description: 通用规则见概览「下单通用规则」。支付宝 App 下单（按商户签约的线上支付宝受理，`channel` 受理，不影响处理）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayAlipayAppOrderV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /alipay/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createAlipayGatewayOrder
+      summary: 支付宝网关下单
+      description: |
+        通用规则见概览「下单通用规则」。
+
+        支付宝网关下单（PC 网站）。`channel` 受理 `Alipay` 与 `UnionPay`，省略时按支付宝下单；
+        选择 `Alipay` 时按商户签约的线上支付宝受理，选择 `UnionPay` 时按银联网页支付下单。
+        创建后把付款人浏览器带到响应 `pay_url`（追加签名三元组与 `redirect`，见概览「支付页约定」）完成支付。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayWebOrder'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /alipay_plus/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-browser
+      operationId: createAlipayPlusOrder
+      summary: Alipay+ 下单
+      description: 通用规则见概览「下单通用规则」。Alipay+ 网关下单（`channel` 受理，不影响处理）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayAlipayPlusOrderV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /wechat_jsapi_gateway/partners/{partner_code}/orders/{order_id}:
+    put:
+      tags:
+        - placing-wallet-web
+      operationId: createWechatJsapiOrder
+      summary: 微信 JSAPI 下单
+      description: 通用规则见概览「下单通用规则」。微信 JSAPI 下单（支付方式固定为 Wechat，`channel` 受理，不影响处理）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayWechatJsApiOrderV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /pay/thirdCard/{partner_code}/preOrder:
+    post:
+      tags:
+        - placing-browser
+      operationId: createCardOrder
+      summary: 卡支付预下单（金额单位：元）
+      servers:
+        - url: https://{cashierHost}/api/v1.0
+          variables:
+            cashierHost:
+              default: cashier.example.com
+              description: 卡支付接入域名由平台提供
+      description: |
+        创建一笔卡支付订单并返回支付页地址。商户系统把付款人浏览器带到响应中的 `pay_url`，
+        付款人在支付页输入卡信息完成付款。
+
+        **金额**：本接口的 `amount` 与 `tipAmount` 以币种主单位的十进制数表示（如 `12.34`），
+        与本 API 其他下单接口的最小计价单位整数不同。
+
+        **商户订单号**：`merchantOrderId` 的唯一性与重复下单规则同概览「下单通用规则」所述。
+
+        **支付页**：`pay_url` 指向卡支付收银台（见 `openCardPaymentPage`）。跳转前商户系统可在其上追加
+        `redirect`（付款成功后跳回的商户页面，URL 编码）。跳回不代表支付成功，商户系统应以订单查询结果为准。
+
+        **结果通知**：请求带 `notify_url` 时，支付成功后平台向该地址发送支付通知，通知内容与其他下单接口相同。
+
+        **错误码**（`return_code`）：通用码见 `GatewayErrorV1`；另有 `ORDER_PAID` / `ORDER_CLOSED` / `DUPLICATE_ORDER_ID`；
+        商户未开通卡支付时返回 `INVALID_CHANNEL`。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardPreOrderRequestV1'
+      responses:
+        '200':
+          description: 下单结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CardPreOrderResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /gateway/partners/{partner_code}/orders/{order_id}/pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openQrcodePaymentPage
+      summary: 扫码支付页（QR Code 下单的 pay_url）
+      description: |
+        扫码下单（`PUT …/orders/{order_id}`）后的支付页：按订单进入收银台、付款人扫码完成付款，付款成功后浏览器按 `redirect` 跳回。
+        须在订单创建后调用。同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /wechat_jsapi_gateway/partners/{partner_code}_order_{order_id}:
+    get:
+      tags:
+        - payment-page
+      operationId: openWechatJsapiPaymentPage
+      summary: 微信 JSAPI 支付页（JSAPI 下单的 pay_url）
+      description: |
+        JSAPI 下单（微信）后的支付页，只能在微信内打开的网页中使用；实际地址以下单响应的 `pay_url` 为准。
+        按订单进入收银台完成付款，支付流程结束后（无论成功与否）浏览器按 `redirect` 跳回。须在订单创建后调用。
+        同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageDirectPay'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /gateway/alipay/partners/{partner_code}/orders/{order_id}/app_pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openAlipayJsapiPaymentPage
+      summary: 支付宝 JSAPI 支付页（JSAPI 下单的 pay_url）
+      description: |
+        JSAPI 下单（支付宝）后的支付页，只能在支付宝内打开的网页中使用；实际地址以下单响应的 `pay_url` 为准。
+        按订单进入收银台完成付款，支付流程结束后（无论成功与否）浏览器按 `redirect` 跳回。须在订单创建后调用。
+        同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageDirectPay'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /h5_payment/partners/{partner_code}/orders/{order_id}/pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openH5PaymentPage
+      summary: H5 支付页（H5 下单的 pay_url）
+      description: |
+        H5 下单后的支付页，可在移动端任意浏览器或 App 内 webview 中打开：按订单进入收银台完成付款，
+        支付流程结束后（无论成功与否）浏览器按 `redirect` 跳回。须在订单创建后调用。
+        本页无需签名。
+      security:
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageSignTime'
+        - $ref: '#/components/parameters/PageSignNonce'
+        - $ref: '#/components/parameters/PageSign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /alipay/partners/{partner_code}/orders/{order_id}/web_pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openAlipayOnlinePaymentPage
+      summary: 支付宝 Online 支付页（Online 下单 channel=Alipay 的 pay_url）
+      description: |
+        银联 / 支付宝 Online 下单（`PUT /web_gateway/…`）选择支付宝时的支付入口：按订单进入收银台完成付款，
+        支付流程结束后浏览器按 `redirect` 跳回。须在订单创建后调用。
+        同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /web_gateway/partners/{partner_code}/orders/{order_id}/pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openUnionpayOnlinePaymentPage
+      summary: 银联 Online 支付页（Online 下单 channel=UnionPay 的 pay_url）
+      description: |
+        银联 / 支付宝 Online 下单（`PUT /web_gateway/…`）选择银联时的支付入口：按订单进入收银台完成付款，
+        支付流程结束后浏览器按 `redirect` 跳回。须在订单创建后调用。
+        本页无需签名。
+      security:
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageSignTime'
+        - $ref: '#/components/parameters/PageSignNonce'
+        - $ref: '#/components/parameters/PageSign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /alipay_plus/partners/{partner_code}/orders/{order_id}/web_pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openAlipayPlusWebPaymentPage
+      summary: Alipay+ 网页支付页
+      description: |
+        Alipay+ 下单（`PUT /alipay_plus/…`）后的网页支付入口：按订单进入收银台完成付款，付款后浏览器按 `redirect` 跳回。
+        须在订单创建后调用。同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /alipay_plus/partners/{partner_code}/orders/{order_id}/app_pay:
+    get:
+      tags:
+        - payment-page
+      operationId: openAlipayPlusAppPaymentPage
+      summary: Alipay+ 移动端支付页
+      description: |
+        Alipay+ 下单（`PUT /alipay_plus/…`）后的移动端支付入口：按订单进入收银台完成付款，付款后浏览器按 `redirect` 跳回。
+        须在订单创建后调用。同一已签名地址在时间窗内可重复打开（付款人刷新、返回不会被拒）。
+
+        成功时返回一个把浏览器带往支付流程的页面（HTTP 200、`text/html`），页面内容不属于约定。
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: |
+            成功时为把浏览器带往支付流程的页面（`text/html`，页面内容不属于约定）；
+            失败、且请求 `Accept` 不含 `text/html` 时返回错误信封（判 `return_code`）。
+          content:
+            text/html:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayErrorV1'
+        '302':
+          description: 浏览器请求（`Accept` 含 `text/html`）失败时跳转至平台错误页。
+          headers:
+            Location:
+              description: 跳转目标
+              schema:
+                type: string
+  /creditCardGateway:
+    get:
+      tags:
+        - payment-page
+      operationId: openCardPaymentPage
+      summary: 卡支付收银台
+      servers:
+        - url: https://{cashierHost}
+          variables:
+            cashierHost:
+              default: cashier.example.com
+              description: 卡支付接入域名由平台提供
+      description: |
+        卡支付预下单（`createCardOrder`）返回的支付页地址所指的收银台入口：按订单进入收银台，付款人在页内输入卡信息完成付款。
+        本入口不在 `/api/v1.0` 前缀下，地址以卡支付预下单接口返回的支付页地址为准。
+        本页无需签名。
+        付款成功后浏览器按 `redirect` 跳回；页面呈现不属于约定，支付结果以订单查询为准。
+      security:
+        - {}
+      parameters:
+        - name: orderId
+          in: query
+          required: true
+          description: 商户订单号
+          schema:
+            type: string
+        - name: mchCode
+          in: query
+          required: true
+          description: 商户编码
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageSignTime'
+        - $ref: '#/components/parameters/PageSignNonce'
+        - $ref: '#/components/parameters/PageSign'
+      responses:
+        '200':
+          description: 收银台页面（页面内容不属于约定）
+          content:
+            text/html:
+              schema:
+                type: string
+  /card_payment_view/partners/{partner_code}/orders/{order_id}/view:
+    get:
+      tags:
+        - payment-page
+      operationId: openUnionpayCardPaymentPage
+      summary: 银联卡号支付页（银联在线下单的 pay_url）
+      description: |
+        银联在线下单（`PUT /gateway/partners/{partner_code}/pre_card_orders/{order_id}`）后的付款入口；门店扫码下单指定银联时也可能返回本地址。
+        按订单进入收银台，付款人在页内输入银联卡信息完成付款，付款后浏览器按 `redirect` 跳回。须在订单创建后调用。
+        本页无需签名。
+      security:
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageSignTime'
+        - $ref: '#/components/parameters/PageSignNonce'
+        - $ref: '#/components/parameters/PageSign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /payment/common/partners/{partner_code}/orders/{platform_order_id}/web_form:
+    get:
+      tags:
+        - payment-page
+      operationId: openHostedPaymentPage
+      summary: 托管支付页
+      description: |
+        下单返回的支付页入口：JSAPI、原生 JSAPI、门店扫码下单，以及 H5、Online 下单选择银联时，响应 `pay_url` 可指向本地址。
+        是否返回本地址由商户开通的收单服务决定；商户系统按返回的 `pay_url` 跳转即可，无需区分。
+        付款人打开后由平台引导完成支付，付款后浏览器按 `redirect` 跳回。须在订单创建后调用。
+        本入口以平台订单号定位订单，地址以下单响应的 `pay_url` 为准。
+        本页无需签名。
+      security:
+        - {}
+      parameters:
+        - $ref: '#/components/parameters/ShortId'
+        - $ref: '#/components/parameters/PlatformOrderId'
+        - $ref: '#/components/parameters/PageRedirect'
+        - $ref: '#/components/parameters/PageSignTime'
+        - $ref: '#/components/parameters/PageSignNonce'
+        - $ref: '#/components/parameters/PageSign'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaymentPageError'
+        '302':
+          $ref: '#/components/responses/PaymentPageRedirect'
+  /auto_debit/partners/{partner_code}/contract/{contract_no}:
+    post:
+      tags:
+        - autodebit
+      operationId: createAutodebitAppContract
+      summary: 委托代扣签约（App）
+      description: |
+        为付款人创建一份委托代扣合约，并返回商户 App 调起渠道签约所需的会话参数。
+        付款人在渠道内确认授权后合约生效，此后商户系统可依据该合约发起扣款。
+
+        `contract_no` 为商户合约号，在同一商户下唯一，以路径参数为准（请求体内同名字段被忽略）。
+        同一商户合约号只能提交一次：重复提交返回 `DUPLICATE_ORDER_ID`，不返回首次结果，也不覆盖原合约；
+        签约未能发起时该商户合约号同样不可再次使用。重新签约须使用新的商户合约号。
+
+        受理成功时返回合约查询结构，`result_code` 为 `NOTSIGN`，`sdk_params.session_id` 为调起签约的会话标识。
+        签约成功、签约失败与解约经签约状态通知送达；签约未能发起、付款人未在签约有效期内完成授权，
+        以及合约有效期届满时不推送通知。合约状态以合约查询的结果为准。
+
+        **错误码**（`return_code`）：商户合约号重复返回 `DUPLICATE_ORDER_ID`；`plan_id` 等请求字段不符合要求返回 `PARAM_INVALID`；
+        签约未能发起时返回错误信封，`return_code` 可能为本文档未列出的值，`return_msg` 为说明；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/ContractNo'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractOrder'
+      responses:
+        '200':
+          description: 签约结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/QueryContractOrderV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+    get:
+      tags:
+        - autodebit
+      operationId: getAutodebitContract
+      summary: 查询委托代扣合约
+      description: |
+        按商户合约号查询合约状态，`result_code` 取值见 `ContractStatusV1`。
+        返回平台当前记录的状态；付款人在渠道内完成授权或解约后，状态更新可能存在延迟。
+        合约状态以合约查询的结果为准，签约状态通知用于触发查询。
+        签约未能发起的合约、付款人未在签约有效期内完成授权的合约，以及合约有效期届满的合约，状态为 `SIGNFAIL`，
+        平台不为此推送签约状态通知。
+
+        合约以 App 签约创建、尚未签约且平台持有签约会话时返回 `sdk_params.session_id`，商户 App 可凭其再次调起签约。
+
+        **错误码**（`return_code`）：合约不存在或不属于本商户返回 `CONTRACT_NOT_EXIST`；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/ContractNo'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      responses:
+        '200':
+          description: 合约查询结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/QueryContractOrderV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /auto_debit/partners/{partner_code}/contract/h5/{contract_no}:
+    post:
+      tags:
+        - autodebit
+      operationId: createAutodebitH5Contract
+      summary: 委托代扣签约（H5）
+      description: |
+        为付款人创建一份委托代扣合约，并返回签约页地址 `signUrl`。付款人打开该地址并在渠道内确认授权后合约生效；
+        请求传入 `return_url` 时，付款人完成签约后返回该地址。
+
+        商户合约号规则与 App 签约相同：重复提交返回 `DUPLICATE_ORDER_ID`，签约未能发起时该商户合约号同样不可再次使用。
+
+        受理成功时返回 `SigningResponseV1`，`signUrl` 为签约页地址，`code` 与 `message` 为 `null`。
+        签约未能发起时同样以 HTTP 200 返回该结构，`signUrl` 为 `null`，`code` 与 `message` 给出原因；
+        其他失败返回错误信封 `GatewayErrorV1`。
+        签约成功、签约失败与解约经签约状态通知送达；签约未能发起、付款人未在签约有效期内完成授权，
+        以及合约有效期届满时不推送通知。合约状态以合约查询的结果为准。
+
+        **错误码**（错误信封的 `return_code`）：商户合约号重复返回 `DUPLICATE_ORDER_ID`；`plan_id` 等请求字段不符合要求返回 `PARAM_INVALID`；
+        以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/ContractNo'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractOrder'
+      responses:
+        '200':
+          description: H5 签约结果
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SigningResponseV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /auto_debit/partners/{partner_code}/contract/{contract_no}/orders/{order_id}/pay:
+    post:
+      tags:
+        - autodebit
+      operationId: payAutodebitOrder
+      summary: 委托代扣扣款
+      description: |
+        依据已签约的合约发起一笔扣款，付款人无需确认。`price` 以给定币种的最小计价单位表示；
+        对有两位小数的币种，`100` 表示 `1.00`。
+
+        受理成功时返回 `return_code=SUCCESS`、`result_code=PAYING`，响应结构与单订单查询相同（见 `AutoDebitPayResultV1`）；
+        平台未受理该笔扣款时 `result_code` 为 `CREATE_FAIL`。扣款被渠道拒绝时，订单查询返回 `result_code=PAY_FAIL`，
+        并带 `channel_error_code` 与 `channel_error_message`。扣款结果以订单查询的结果为准，支付通知用于触发查询。
+
+        同一商户订单号只对应一笔扣款。以同一订单号重复提交时不会重复扣款，按该订单当前状态返回：
+        处理中返回 `return_code=SUCCESS` 与 `result_code=PAYING`；已支付返回 `ORDER_PAID`；已关闭、失败或未受理返回 `ORDER_CLOSED`。
+        该订单号已用于下单接口创建的订单，或合约号、金额、币种与已有扣款不一致时返回 `PARAM_INVALID`，不发起扣款。
+
+        **结果通知**：请求带 `notify_url` 时，扣款成功后平台向该地址发送支付通知，通知内容与下单接口的支付通知相同。
+
+        **错误码**（`return_code`）：合约不存在、不属于本商户或不可用于扣款（含未处于 `SIGNED` 状态）返回 `CONTRACT_NOT_EXIST`；
+        商户当前不可受理该扣款返回 `NOT_PERMITTED`；同一订单号的处理见上；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/ContractNo'
+        - $ref: '#/components/parameters/OrderId'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractPaymentOrder'
+      responses:
+        '200':
+          description: 代扣结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AutoDebitPayResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+  /auto_debit/partners/{partner_code}/contract/{contract_no}/terminate:
+    post:
+      tags:
+        - autodebit
+      operationId: terminateAutodebitContract
+      summary: 委托代扣解约
+      description: |
+        解除指定合约。解约受理后平台即停止受理该合约的新扣款，已受理的扣款不受影响。
+        已签约的合约解约后查询状态为 `TERMINATING`，解约完成后为 `TERMINATED`；
+        尚未签约的合约解约后直接变为 `TERMINATED`。对已处于终态的合约再次解约同样返回成功。
+
+        `termination_note` 为解约原因，必填，最长 255 字符。
+
+        **错误码**（`return_code`）：合约不存在或不属于本商户返回 `CONTRACT_NOT_EXIST`；以及 `GatewayErrorV1` 所列通用码。
+      parameters:
+        - $ref: '#/components/parameters/MchCode'
+        - $ref: '#/components/parameters/ContractNo'
+        - $ref: '#/components/parameters/SignTime'
+        - $ref: '#/components/parameters/SignNonce'
+        - $ref: '#/components/parameters/Sign'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminateOrder'
+      responses:
+        '200':
+          description: 解约结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SimpleResultV1'
+                  - $ref: '#/components/schemas/GatewayErrorV1'
+components:
+  securitySchemes:
+    gatewaySignV1:
+      type: apiKey
+      in: query
+      name: sign
+      description: |
+        v1.0 对称共享密钥签名。
+
+        - `sign = SHA256Hex(partner_code & time & nonce_str & credentialCode)`（小写 hex）。
+        - `credentialCode` 是平台为每个商户签发的共享密钥，平台按 path 中的商户编码查得，**不在请求中传递**。
+        - 三要素 `time`（UTC 毫秒时间戳）/ `nonce_str` / `sign` 走 **query 参数**（顺序无关）；拼接签名串时各值不做转义。
+          缺少任一要素时返回 `PARAM_INVALID`。
+        - 商户身份由 path 中的商户编码 `partner_code` 标识。path `partner_code` 使用商户码别名时，签名串中须用实际商户码。
+        - 时间窗：`time` 与服务器时间相差须小于 5 分钟，否则返回 `SIGN_TIMEOUT`。
+        - 防重放：同一商户同一组 `time` + `nonce_str` 在首次使用时与所请求的地址绑定。API 接口的同一组要素只受理一次，
+          重复返回 `SIGN_EXPIRED`，每次请求须使用新的 `time` / `nonce_str` / `sign`；支付页地址可用同一组要素在时间窗内
+          重复打开（付款人刷新、返回）；同一组要素用于其他地址或任一 API 接口时返回 `SIGN_EXPIRED`（见概览「支付页约定」）。
+        - **同步响应不带签名**：本 API 响应体不含 `sign` / `time` / `nonce_str`，商户无需验签。
+          相同算法的签名用于平台发往商户的通知（支付通知、退款通知与委托代扣签约状态通知）。
+  parameters:
+    ShortId:
+      name: partner_code
+      in: path
+      required: true
+      description: |
+        商户编码（partner code）。可用商户码别名；签名串中的 `partner_code` 须用实际商户码。
+      schema:
+        type: string
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      description: |
+        商户订单号（同一商户下唯一；下单时最长 50 字符）。
+        查询、退款等作用于既有订单的路径传入不存在的单号（含超过 50 字符的单号）时返回 `ORDER_NOT_EXIST`。
+      schema:
+        type: string
+    RefundId:
+      name: refund_id
+      in: path
+      required: true
+      description: 商户退款号（幂等键，在订单所属商户范围内唯一：同一退款号重复提交不重复退款，返回首次受理的结果，并带该退款当前的 result_code）
+      schema:
+        type: string
+    SignTime:
+      name: time
+      in: query
+      required: true
+      description: |
+        UTC 毫秒时间戳；与服务器时间相差须小于 5 分钟，否则返回 `SIGN_TIMEOUT`。
+        传入秒级时间戳时同样返回 `SIGN_TIMEOUT`。
+      schema:
+        type: string
+    SignNonce:
+      name: nonce_str
+      in: query
+      required: true
+      description: |
+        随机串（防重放），须为 URL-safe 字符，建议 10–30 位。
+        **每次请求须使用新值**：同一商户同一组 `time` + `nonce_str` 在首次使用时与所请求的地址绑定，
+        API 接口的同一组要素只受理一次，重放返回 `SIGN_EXPIRED`；支付页地址可用同一组要素在时间窗内重复打开，
+        用于其他地址或任一 API 接口时返回 `SIGN_EXPIRED`（见概览「支付页约定」）。
+      schema:
+        type: string
+    Sign:
+      name: sign
+      in: query
+      required: true
+      description: 对称签名 SHA256Hex(partner_code & time & nonce_str & credentialCode)
+      schema:
+        type: string
+    PageSignTime:
+      name: time
+      in: query
+      required: false
+      description: 同 `SignTime`。本页无需签名。
+      schema:
+        type: string
+    PageSignNonce:
+      name: nonce_str
+      in: query
+      required: false
+      description: 同 `SignNonce`。本页无需签名。
+      schema:
+        type: string
+    PageSign:
+      name: sign
+      in: query
+      required: false
+      description: 同 `Sign`。本页无需签名。
+      schema:
+        type: string
+    MchCode:
+      name: partner_code
+      in: path
+      required: true
+      description: 商户编码（卡支付预下单与委托代扣路径中的商户身份）
+      schema:
+        type: string
+    PlatformOrderId:
+      name: platform_order_id
+      in: path
+      required: true
+      description: 平台订单号（下单响应的 `order_id`）
+      schema:
+        type: string
+    ContractNo:
+      name: contract_no
+      in: path
+      required: true
+      description: |
+        商户合约号（同一商户下唯一；签约时最长 64 字符）。
+        查询、扣款与解约传入不存在的合约号（含超过 64 字符的合约号）时返回 `CONTRACT_NOT_EXIST`。
+      schema:
+        type: string
+    PageRedirect:
+      name: redirect
+      in: query
+      required: false
+      description: |
+        支付流程结束后浏览器跳回的商户页面地址（URL 编码）。跳转前应在地址上追加 `redirect`。
+        跳回不代表支付成功，支付结果以订单查询的结果为准。
+      schema:
+        type: string
+    PageDirectPay:
+      name: directpay
+      in: query
+      required: false
+      description: 受理，不影响处理
+      schema:
+        type: boolean
+        default: false
+  responses:
+    PaymentPageRedirect:
+      description: |
+        跳转：成功时把浏览器带往支付流程；浏览器请求（`Accept` 含 `text/html`）失败时带往平台错误页。
+        跳转目标、中间页面与支付页面本身不属于契约。
+      headers:
+        Location:
+          description: 跳转目标
+          schema:
+            type: string
+    PaymentPageError:
+      description: 失败、且请求 `Accept` 不含 `text/html` 时返回错误信封（HTTP 200，判 `return_code`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GatewayErrorV1'
+  schemas:
+    AmountIntV1:
+      type: integer
+      minimum: 0
+      description: |
+        金额，以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。
+    AmountMajorDecimalV1:
+      type: number
+      description: |
+        **单位：元（币种主单位小数）**。金额，以币种主单位表示的十进制数（如 `10.50`）。仅用于订单列表；
+        本 API 其余金额均使用最小计价单位整数。
+    TipAmountV1:
+      type: integer
+      minimum: 0
+      description: |
+        小费金额，给定币种最小计价单位的整数。
+    OrderCurrencyV1:
+      type: string
+      description: |
+        标价币种，ISO 4217 三位字母码。可用的标价币种以商户开通情况为准（至少含商户的结算币种与 `CNY`），其他取值返回 `PARAM_INVALID`；
+        省略时取商户的结算币种。
+    NotifyUrlV1:
+      type: string
+      pattern: ^(http|https)://([\w\.\-/:?&=]+)$
+      description: |
+        支付结果通知地址，须以 `http://` 或 `https://` 开头，且只含字母、数字、下划线与 `.` `-` `/` `:` `?` `&` `=`
+        （含 `%`、`#` 等其他字符的地址不受理），否则返回 `PARAM_INVALID`。
+    RedirectUrlV1:
+      type: string
+      pattern: ^[a-zA-Z][a-zA-Z0-9+.-]*://.+$
+      description: |
+        支付后的回跳页面地址，须为带协议头的完整地址（如 `https://…`），否则返回 `PARAM_INVALID`。
+        字段名只接受 `redirect`（`redirect_url` 不被受理）。
+    OrderExpireV1:
+      type: string
+      description: |
+        订单有效期（可选）。取值为 `yyyy-MM-dd HH:mm:ss` 格式的失效时刻，或数字加 `s` / `m` / `h` 的相对时长（如 `30m`）；
+        须在 20 秒到 24 小时之间，不符合时返回 `PARAM_INVALID`。省略时按概览「下单通用规则」所述的默认有效期。
+    OrderPreauthV1:
+      type: boolean
+      default: false
+      description: 置 `true` 时按预授权下单：支付成功的款项暂不结算，商户释放预授权后进入结算（默认 `false`）。
+    V1DateTimeString:
+      type: string
+      pattern: ^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$
+      example: '2026-07-26 09:30:00'
+      description: |
+        本 API 时间字段的格式为 **`yyyy-MM-dd HH:mm:ss`（空格分隔）**，日期的格式为 `yyyyMMdd`，均按 **UTC-8**。
+        该格式不是 RFC 3339 / ISO 8601 格式。
+    PaymentChannelV1:
+      type: string
+      enum:
+        - Wechat
+        - Alipay
+        - UnionPay
+        - CreditCard
+      description: |
+        支付方式（响应字段）。`Wechat` / `Alipay` / `UnionPay` 按付款人使用的支付方式返回，银行卡与 Apple Pay 支付返回 `CreditCard`。
+    SimpleResultV1:
+      type: object
+      description: 简单成功信封（关单、将已支付订单转为预授权、释放预授权、委托代扣解约）
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`，表示网关调用成功
+        result_code:
+          type: string
+          description: 成功时为 `SUCCESS`
+    GatewayErrorV1:
+      type: object
+      description: |
+        错误信封。业务或参数校验失败时以 **HTTP 200** 返回此结构，结果以 `return_code` 判断；
+        `return_code` 取值包括 `PARAM_INVALID`、`SYSTEMERROR` 与各业务码（如 `ORDER_PAID`）。
+
+        **判断规则**：判断成功或失败只依据 `return_code`——`return_code` 不为 `SUCCESS` 即为失败，失败响应必含 `return_msg`。
+        成功响应也可能带 `return_msg`（如单订单查询与委托代扣扣款），不以其有无判断成败。
+
+        `timestamp` 为 epoch 毫秒数值，与正常响应中 `yyyy-MM-dd HH:mm:ss` 格式的时间字符串
+        （见 `V1DateTimeString`）不同，需分别解析。
+      required:
+        - return_code
+        - return_msg
+      properties:
+        return_code:
+          type: string
+          not:
+            const: SUCCESS
+          description: |
+            非 `SUCCESS` 的错误码。错误码可能扩展。商户系统应为未识别的错误码提供默认的失败处理分支。
+
+            各端点通用码：`SYSTEMERROR`（系统内部异常）/ `INVALID_SHORT_ID`（商户编码无效）/
+            `SIGN_TIMEOUT`（`time` 与服务器时间相差超过 5 分钟）/ `SIGN_EXPIRED`（同一组 `time` + `nonce_str` 重复使用）/
+            `INVALID_SIGN`（签名无效）/ `PARAM_INVALID`（参数无效，详见 `return_msg`）/
+            `NOT_PERMITTED`（该商户未开通网关支付权限）/ `INVALID_CHANNEL`（支付方式不可用；`channel` 取值区分大小写）。
+
+            端点专属码见各端点描述，如 `ORDER_NOT_EXIST` / `ORDER_MISMATCH`（保留码，当前不产生）/ `ORDER_PAID` / `ORDER_CLOSED` /
+            `DUPLICATE_ORDER_ID` / `ORDER_NOT_PAID` / `ORDER_CANCEL_FAILED` / `REFUND_NOT_EXIST` / `REFUND_MISMATCH` /
+            `ORDER_LOCKED` / `NOT_PRE_AUTH_ORDER` / `CONTRACT_NOT_EXIST` / `INVALID_DATE` / `SECONDARY_MERCHANT_ID_INVALID` /
+            `AUTHCODEEXPIRE` / `NOTENOUGH` / `NOTSUPORTCARD` / `AUTH_CODE_ERROR` / `AUTH_CODE_INVALID`。
+        return_msg:
+          type: string
+          description: 错误描述（本地化）
+        message:
+          type: string
+          description: 同 return_msg
+        timestamp:
+          type: integer
+          format: int64
+          example: 1785000000000
+          description: 服务端时间戳，epoch 毫秒数值（整数，不是 RFC 3339 字符串）。
+    RefundRequestV1:
+      type: object
+      description: 退款请求体
+      required:
+        - fee
+      properties:
+        fee:
+          allOf:
+            - $ref: '#/components/schemas/AmountIntV1'
+          description: 退款金额
+        description:
+          type: string
+          description: 退款原因 / 备注（超过 128 字符的部分由平台截断）
+        notify_url:
+          type: string
+          description: 退款异步回调 URL
+    RefundResultV1:
+      type: object
+      description: |
+        退款结果（创建退款与查询退款返回相同结构）。`amount` 以给定币种的最小计价单位表示。
+      required:
+        - return_code
+      properties:
+        refund_id:
+          type: string
+          description: 平台退款号（区别于路径参数中的商户退款号 `refund_id`）
+        partner_refund_id:
+          type: string
+          description: 商户退款号，与路径参数 `refund_id`（商户退款号）相同
+        amount:
+          type: integer
+          description: 退款金额，以给定币种的最小计价单位表示
+        currency:
+          type: string
+        result_code:
+          $ref: '#/components/schemas/RefundStatusV1'
+        channel_refund_id:
+          type: string
+          description: 渠道退款号（有值时返回）
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`
+    RefundStatusV1:
+      type: string
+      description: |
+        退款状态：
+
+        - `WAITING`：退款已创建，处理中（非终态）。
+        - `CREATE_FAILED`：退款未能提交支付渠道（终态），含审核未通过、审核被撤回与商户可用余额不足。
+        - `SUCCESS`：已提交支付渠道，等待确认（非终态，不表示款项已退回）。
+        - `FAILED`：退款失败（终态）。
+        - `FINISHED`：款项已退回付款人（终态）。
+        - `CHANGE`：保留值，当前不产生。
+      enum:
+        - WAITING
+        - CREATE_FAILED
+        - SUCCESS
+        - FAILED
+        - FINISHED
+        - CHANGE
+    OrderQueryResultV1:
+      type: object
+      description: |
+        单订单查询结果。金额字段以给定币种的最小计价单位表示。部分字段条件出现
+        （见各字段描述）。`result_code` 的取值与订单列表的 `status` 不同。
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`
+        result_code:
+          type: string
+          description: |
+            订单状态：
+            `PAYING` 等待支付（订单已建立、支付结果未定）·
+            `CREATE_FAIL` 未受理（订单已创建，但平台未受理该笔交易，不会发生支付；如需重新收款，商户系统应以新的商户订单号重新下单）·
+            `CLOSED` 已关闭 ·
+            `PAY_FAIL` 支付失败（订单不可再支付；如需重新收款，商户系统应以新的商户订单号重新下单）·
+            `PAY_SUCCESS` 支付成功 ·
+            `PARTIAL_REFUND` 部分退款 · `FULL_REFUND` 全额退款。
+          enum:
+            - PAYING
+            - CREATE_FAIL
+            - CLOSED
+            - PAY_FAIL
+            - PAY_SUCCESS
+            - PARTIAL_REFUND
+            - FULL_REFUND
+        pay_time:
+          allOf:
+            - $ref: '#/components/schemas/V1DateTimeString'
+          description: 支付时间（有值时返回）
+        channel_order_id:
+          type: string
+          description: 渠道交易号（有值时返回）
+        rate:
+          type: number
+          description: 交易汇率（有值时返回）
+        currency:
+          type: string
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+          description: 支付方式（订单尚未确定支付方式时不返回，如付款人尚未选定支付方式）
+        total_fee:
+          type: integer
+          description: 订单金额（最小货币单位整数）
+        tip_fee:
+          type: integer
+          description: 小费金额（最小货币单位整数）
+        real_fee:
+          type: integer
+          description: 实际支付金额（最小货币单位整数）
+        input_fee:
+          type: integer
+          description: 商户录入金额（最小货币单位整数）
+        available_amount:
+          type: integer
+          description: 可退金额，即已支付金额减去已退款金额与退款中金额（最小货币单位整数）
+        surcharge:
+          type: integer
+          description: 付款人附加费（最小货币单位整数；有值时返回）
+        partner_order_id:
+          type: string
+          description: 商户订单号
+        order_description:
+          type: string
+        order_id:
+          type: string
+          description: 系统订单号
+        customer_id:
+          type: string
+        channel_error_code:
+          type: string
+          description: 渠道错误码（有值时返回）
+        channel_error_message:
+          type: string
+          description: 渠道错误描述（有值时返回）
+        return_msg:
+          type: string
+          description: 同 `channel_error_message`（有值时返回）
+        create_time:
+          $ref: '#/components/schemas/V1DateTimeString'
+        sdk_params:
+          type: object
+          description: 调起支付所需参数（有值时返回）
+        jsapi:
+          type: object
+          description: 调起支付所需参数（有值时返回）
+    AutoDebitPayResultV1:
+      description: |
+        委托代扣扣款响应，结构与单订单查询结果相同。扣款订单各字段的取值：
+
+        - `result_code`：受理成功（含以同一订单号重复提交且该扣款处理中）为 `PAYING`；平台未受理该笔扣款为 `CREATE_FAIL`。
+        - `channel`：支付方式，取值口径同订单查询。
+        - `currency`：请求的 `currency`（省略时为商户的结算币种）；`total_fee`、`real_fee` 与 `input_fee` 均为请求的 `price`；`tip_fee` 为 `0`。
+        - `partner_order_id`：路径参数 `order_id`；`order_description`：请求的 `description`；`order_id`：平台订单号。
+        - 扣款订单不返回 `sdk_params` 与 `jsapi`。
+      allOf:
+        - $ref: '#/components/schemas/OrderQueryResultV1'
+    OrderStatusFilterV1:
+      type: string
+      description: |
+        订单列表 status 过滤入参。`ALL` 全部订单（含未支付与已关闭）/
+        `PAID` 已支付订单（含有退款的）/ `REFUNDED` 与 `ALL_REFUNDED` 有退款的订单 /
+        `PARTIAL_REFUNDED` 部分退款的订单 / `FULL_REFUNDED` 全额退款的订单 / `SUCCESS` 支付成功且无退款的订单 /
+        `FAILED` 未受理或支付失败的订单 / `CLOSED` 已关闭的订单。
+      enum:
+        - ALL
+        - PAID
+        - ALL_REFUNDED
+        - REFUNDED
+        - PARTIAL_REFUNDED
+        - FULL_REFUNDED
+        - SUCCESS
+        - FAILED
+        - CLOSED
+      default: ALL
+    ChannelFilterV1:
+      type: string
+      description: |
+        订单列表支付方式筛选。`ALL` 不筛选；其余值按响应 `channel` 中对应的支付方式筛选
+        （`WECHAT` 对应 `Wechat`，`ALIPAY` 对应 `Alipay`，`UNIONPAY` 对应 `UnionPay`，`CREDITCARD` 对应 `CreditCard`）。
+      enum:
+        - ALL
+        - WECHAT
+        - ALIPAY
+        - UNIONPAY
+        - CREDITCARD
+      default: ALL
+    OrderListResultV1:
+      type: object
+      description: |
+        订单列表结果。`data[]` 与 `analysis` 中的金额以币种主单位小数表示（如 `1.05`），
+        本 API 其他接口以最小计价单位整数表示，见 `OrderListItemV1`。
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderListItemV1'
+        pagination:
+          type: object
+          description: |
+            分页信息。`totalCount` 与 `totalPages` 使用 camelCase 字段名。
+          additionalProperties: true
+          properties:
+            page:
+              type: integer
+              description: 页码（从 1 起）
+            limit:
+              type: integer
+              description: 每页条数（实际生效值）
+            totalCount:
+              type: integer
+              description: 总条数
+            totalPages:
+              type: integer
+              description: 总页数
+        analysis:
+          type: object
+          description: |
+            汇总；**单位：元（币种主单位小数）**。`total_fee` / `real_fee` / `paid_fee` / `refund_fee` / `pre_refund_fee` 以结算币种计，
+            其中 `refund_fee` 为退款净额（退款出账计为负值）；`display_amount` / `pre_display_amount`
+            为非 CNY 订单的录入金额合计，`cny_display_amount` / `pre_cny_display_amount` 为 CNY 订单的录入金额合计。
+          properties:
+            order_count:
+              type: integer
+            total_fee:
+              allOf:
+                - $ref: '#/components/schemas/AmountMajorDecimalV1'
+              description: '**单位：元（币种主单位小数）**。订单金额合计，以结算币种计'
+            real_fee:
+              allOf:
+                - $ref: '#/components/schemas/AmountMajorDecimalV1'
+              description: '**单位：元（币种主单位小数）**。实际支付金额合计，以结算币种计'
+            paid_fee:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            refund_fee:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            pre_refund_fee:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            customers:
+              type: integer
+            display_amount:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            pre_display_amount:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            cny_display_amount:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+            pre_cny_display_amount:
+              $ref: '#/components/schemas/AmountMajorDecimalV1'
+    OrderListItemV1:
+      type: object
+      description: |
+        订单列表条目。金额字段（`total_fee` / `real_fee` / `refund_fee` / `amount` /
+        `serviceFee` / `tip_amount`）以币种主单位小数表示（如 `1.05`），以订单币种 `currency` 计；
+        单订单查询、流水与结算查询以最小计价单位整数表示。
+      properties:
+        order_id:
+          type: string
+        total_fee:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。订单金额'
+        real_fee:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。实际支付金额'
+        amount:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。录入金额与小费之和'
+        serviceFee:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。付款人支付的服务费'
+        tip_amount:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。小费'
+        currency:
+          type: string
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+          description: 支付方式（订单尚未确定支付方式时不返回，如付款人尚未选定支付方式）
+        create_time:
+          $ref: '#/components/schemas/V1DateTimeString'
+        pay_time:
+          allOf:
+            - $ref: '#/components/schemas/V1DateTimeString'
+          description: 订单终态确认时刻
+        pre_authorization:
+          type: boolean
+          description: 是否预授权订单（释放后仍为 true）
+        channel_error_message:
+          type: string
+          description: 下单或支付失败的渠道错误描述（有值时返回）
+        status:
+          type: string
+          description: |
+            订单列表状态（取值与单订单查询的 `result_code` 不同）：
+
+            - `SUBMITTING`：提交中。
+            - `SUBMIT_FAIL`：未受理（订单已创建，但平台未受理该笔交易，不会发生支付；如需重新收款，商户系统应以新的商户订单号重新下单）。
+            - `WAITING_PAYMENT`：待支付。
+            - `CLOSED`：已关闭。
+            - `PAYMENT_FAIL`：支付失败，订单不可再支付；如需重新收款，商户系统应以新的商户订单号重新下单。
+            - `SUCCESS`：支付成功。
+            - `PARTIAL_REFUND`：部分退款。
+            - `FULL_REFUND`：全额退款。
+
+            同一笔订单：本字段的 `SUBMIT_FAIL` 与单订单查询的 `CREATE_FAIL` 指同一状态。
+          enum:
+            - SUBMITTING
+            - SUBMIT_FAIL
+            - WAITING_PAYMENT
+            - CLOSED
+            - PAYMENT_FAIL
+            - SUCCESS
+            - PARTIAL_REFUND
+            - FULL_REFUND
+        order_body:
+          type: string
+          description: 订单描述
+        partner_order_id:
+          type: string
+        gateway:
+          type:
+            - string
+            - 'null'
+          description: |
+            下单来源标签（人类可读字符串）：`Retail In-Store`（官方 POS / App）/ `QR Code`（商户静态码）/
+            `Online API`（扫码下单 API）/ `WeChat HTML5`（JSAPI）/ `Retail API`（零售 API）/ `Mobile H5`（H5 API）/
+            `Third Party Gateway` / `APP`（SDK API）/ `Miniprogram`（小程序 API）。原生码等其余来源本字段为 `null`。
+        partner_code:
+          type: string
+        partner_name:
+          type: string
+        refund_fee:
+          allOf:
+            - $ref: '#/components/schemas/AmountMajorDecimalV1'
+          description: '**单位：元（币种主单位小数）**。该订单累计退款金额'
+    TransactionListResultV1:
+      type: object
+      description: |
+        交易流水结果（金额以最小计价单位整数表示）。`transaction_count` / `order_count` / `refund_count`
+        为该日全部流水的计数，不随分页变化。
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+        result_code:
+          type: string
+        transaction_count:
+          type: integer
+        order_count:
+          type: integer
+        refund_count:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionItemV1'
+        pagination:
+          type: object
+          description: |
+            分页信息（仅请求传入 `page` 或 `limit` 时返回）。`totalCount` 与 `totalPages` 使用 camelCase 字段名。
+          additionalProperties: true
+          properties:
+            page:
+              type: integer
+              description: 页码（从 1 起）
+            limit:
+              type: integer
+              description: 每页条数（实际生效值）
+            totalCount:
+              type: integer
+              description: 总条数
+            totalPages:
+              type: integer
+              description: 总页数
+    TransactionItemV1:
+      type: object
+      description: |
+        流水条目（金额以最小计价单位整数表示）。`total_amount` / `input_amount` / `customer_payment_amount`
+        以订单币种 `currency` 计；`settle_amount` / `total_surcharge` 以结算币种计。
+      properties:
+        transaction_time:
+          type: string
+          description: 交易时间 yyyyMMddHHmmss；按 `date` 查询时以本字段所在日期为准
+        order_id:
+          type: string
+        partner_order_id:
+          type: string
+        channel_order_id:
+          type: string
+          description: 渠道交易号（付款流水为渠道支付交易号，退款流水为渠道退款号）；退款失败回冲流水为平台退款号加 `-PAYBACK`
+        refund_id:
+          type: string
+        partner_refund_id:
+          type: string
+        gateway:
+          $ref: '#/components/schemas/TradeGatewayCodeV1'
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+          description: 该流水所属支付订单的支付方式
+        type:
+          type: string
+          enum:
+            - Credit
+            - Debit
+          description: 流水类型（Credit 入账 / Debit 出账）
+        currency:
+          type: string
+        total_amount:
+          type: integer
+          description: 所属支付订单的订单金额（退款流水亦为订单金额；最小货币单位整数，订单币种）
+        input_amount:
+          type: integer
+          description: 最小货币单位整数（订单币种；有值时返回）
+        customer_payment_amount:
+          type: integer
+          description: 最小货币单位整数（订单币种；有值时返回）
+        settle_amount:
+          type: integer
+          description: 最小货币单位整数（结算币种）
+        exchange_rate:
+          type: number
+          description: 交易汇率（有值时返回；最多 6 位小数）
+        remark:
+          type: string
+        surcharge_rate:
+          type: number
+          description: 商户手续费率，数值，如 `0.02` 表示 2%
+        total_surcharge:
+          type: integer
+          description: 最小货币单位整数（结算币种）
+    TradeGatewayCodeV1:
+      type: integer
+      description: |
+        下单来源（整数码）：
+
+        0 线下付款码（扫付款人设备上的付款码）· 1 线下扫码（付款人扫 POS 屏幕上的二维码）·
+        2 商户静态码 · 3 QR Code 网关 · 4 JSAPI 网关 · 5 线下支付（付款码被扫 API）· 6 线下支付（门店扫码 API）·
+        7 商户静态码 · 8 H5 网关 · 9 第三方网关 · 10 APP SDK 网关 · 11 账单码网关 · 12 小程序网关 ·
+        13 原生码网关 · 14 账单链接网关 · 15 原生 JSAPI · 16 卡支付（平台卡支付页）· 17 银联卡号支付页 · 18 Shopify 订单 ·
+        19 AllValue 订单 · 20 委托代扣。
+
+        订单列表中的 `gateway` 为可读字符串标签，与本字段的整数码不同。
+    SettlementResultV1:
+      type: object
+      description: |
+        结算结果（金额以最小计价单位整数表示；`total_*` 汇总以结算币种计）。无数据时不返回 `settle_from`、`settle_to` 与 `settle_days`。
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+        result_code:
+          type: string
+        transaction_count:
+          type: integer
+        order_count:
+          type: integer
+        refund_count:
+          type: integer
+        settle_from:
+          type: string
+          description: 本次结算覆盖的交易日期起 yyyyMMdd（有值时返回）
+        settle_to:
+          type: string
+          description: 本次结算覆盖的交易日期止 yyyyMMdd（有值时返回）
+        settle_days:
+          type: string
+          description: 结算周期，形如 `T+1`（有值时返回）
+        total_credit:
+          type: integer
+          description: 入账合计（最小货币单位整数，结算币种）
+        total_debit:
+          type: integer
+          description: 出账合计（最小货币单位整数，结算币种）
+        total_surcharge:
+          type: integer
+          description: 手续费合计（最小货币单位整数，结算币种）
+        total_transfer:
+          type: integer
+          description: 划入商户银行账户合计（最小货币单位整数，结算币种）
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementItemV1'
+    SettlementItemV1:
+      type: object
+      description: |
+        结算条目（金额以最小计价单位整数表示；相比流水条目，增加 `surcharge` 与 `transfer_amount`，
+        不含 `customer_payment_amount` 与 `total_surcharge`）。`total_amount` / `input_amount` 以 `currency` 计；
+        `settle_amount` / `surcharge` / `transfer_amount` 以结算币种计。
+      properties:
+        transaction_time:
+          type: string
+          description: 交易时间 yyyyMMddHHmmss
+        order_id:
+          type: string
+        partner_order_id:
+          type: string
+        channel_order_id:
+          type: string
+          description: 渠道交易号（付款流水为渠道支付交易号，退款流水为渠道退款号）；退款失败回冲流水为平台退款号加 `-PAYBACK`
+        refund_id:
+          type: string
+        partner_refund_id:
+          type: string
+        gateway:
+          $ref: '#/components/schemas/TradeGatewayCodeV1'
+        channel:
+          type: string
+          enum:
+            - Wechat
+            - Alipay
+            - UnionPay
+            - CreditCard
+            - System
+          description: |
+            该条目所属支付订单的支付方式（`Wechat` / `Alipay` / `UnionPay` / `CreditCard`，同 `PaymentChannelV1`）。
+            平台调整条目为 `System`，此类条目不含 `gateway` / `partner_order_id` / `input_amount` / `surcharge_rate`。
+        type:
+          type: string
+          enum:
+            - Credit
+            - Debit
+          description: 流水类型（Credit 入账 / Debit 出账）
+        currency:
+          type: string
+        total_amount:
+          type: integer
+          description: 本条金额（最小货币单位整数）
+        input_amount:
+          type: integer
+          description: 最小货币单位整数（以 `currency` 计；有值时返回）
+        settle_amount:
+          type: integer
+          description: 最小货币单位整数（结算币种）
+        exchange_rate:
+          type: number
+          description: 交易汇率（有值时返回；最多 6 位小数）
+        surcharge_rate:
+          type: string
+          description: 商户手续费率，字符串，如 "2.0%"（流水条目中为数值）
+        surcharge:
+          type: integer
+          description: 商户手续费（最小货币单位整数，结算币种）
+        transfer_amount:
+          type: integer
+          description: 划入商户银行账户金额（最小货币单位整数，结算币种）
+        remark:
+          type: string
+    WebGatewayOrderV1:
+      description: |
+        银联 / 支付宝 Online 下单请求体。与通用下单请求体的差别仅在 `channel`：本接口只接受下列取值，省略时按 `Alipay` 处理。
+      allOf:
+        - $ref: '#/components/schemas/GatewayWebOrderBaseV1'
+        - type: object
+          properties:
+            channel:
+              type: string
+              enum:
+                - Alipay
+                - UnionPay
+              default: Alipay
+              description: |
+                支付方式（区分大小写；可省略，省略时按 `Alipay` 处理）。传 `Alipay` 时按商户签约的线上支付宝受理。
+                本端点**不接受**微信与 `CreditCard`。
+    GatewayWebOrder:
+      description: |
+        v1.0 gateway 下单共用请求体。`price` 以给定币种的最小计价单位表示；
+        对有两位小数的币种，`100` 表示 `1.00`。
+      allOf:
+        - $ref: '#/components/schemas/GatewayWebOrderBaseV1'
+        - type: object
+          properties:
+            channel:
+              type: string
+              description: 支付方式（区分大小写）；可用取值与省略时的处理见各接口说明。
+              enum:
+                - Alipay
+                - UnionPay
+    GatewayAlipayPlusOrderV1:
+      description: Alipay+ 下单请求体（`channel` 受理，不影响处理）
+      allOf:
+        - $ref: '#/components/schemas/GatewayWebOrderBaseV1'
+        - type: object
+          properties:
+            channel:
+              type: string
+              description: 受理，不影响处理
+    GatewayWebOrderBaseV1:
+      type: object
+      description: |
+        通用下单请求体中与 `channel` 无关的部分（`channel` 的可用取值因接口而异，见 `GatewayWebOrder` 与
+        `WebGatewayOrderV1`）。`price` 以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。
+      required:
+        - description
+        - price
+      properties:
+        description:
+          type: string
+          description: 订单描述（必填；上限 128 字符）
+        price:
+          allOf:
+            - $ref: '#/components/schemas/AmountIntV1'
+          description: 订单金额，给定币种最小计价单位的整数
+        currency:
+          $ref: '#/components/schemas/OrderCurrencyV1'
+        tipAmount:
+          $ref: '#/components/schemas/TipAmountV1'
+        notify_url:
+          $ref: '#/components/schemas/NotifyUrlV1'
+        redirect:
+          $ref: '#/components/schemas/RedirectUrlV1'
+        preauth:
+          $ref: '#/components/schemas/OrderPreauthV1'
+        expire:
+          $ref: '#/components/schemas/OrderExpireV1'
+        operator:
+          type: string
+    GatewayOrderBaseV1:
+      type: object
+      description: 下单请求的公共字段（小费、`redirect` 与 `expire` 的受理因下单方式而异，见各请求体）
+      required:
+        - description
+        - price
+      properties:
+        description:
+          type: string
+          description: 订单描述（上限 128 字符）
+        price:
+          allOf:
+            - $ref: '#/components/schemas/AmountIntV1'
+          description: 订单金额，给定币种最小计价单位的整数
+        currency:
+          $ref: '#/components/schemas/OrderCurrencyV1'
+        notify_url:
+          $ref: '#/components/schemas/NotifyUrlV1'
+        preauth:
+          $ref: '#/components/schemas/OrderPreauthV1'
+    GatewayOnlineOrderV1:
+      description: 下单请求公共字段（含 `channel`）
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - type: object
+          properties:
+            channel:
+              type: string
+              enum:
+                - Wechat
+                - Alipay
+                - UnionPay
+              default: Wechat
+              description: 支付方式（区分大小写）。省略时按 `Wechat` 处理。
+            operator:
+              type: string
+    GatewayIgnoredChannelV1:
+      type: object
+      description: 支付方式由接口本身决定的下单请求中的 `channel`（受理，不影响处理）
+      properties:
+        channel:
+          type: string
+          description: 受理，不影响处理
+        operator:
+          type: string
+    GatewaySDKOrder:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - $ref: '#/components/schemas/GatewaySDKOrderFieldsV1'
+    GatewayAlipayAppOrderV1:
+      description: 支付宝 App 下单请求体（`channel` 受理，不影响处理）
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - $ref: '#/components/schemas/GatewayIgnoredChannelV1'
+        - $ref: '#/components/schemas/GatewaySDKOrderFieldsV1'
+    GatewaySDKOrderFieldsV1:
+      type: object
+      description: SDK / App 下单请求的专有字段
+      properties:
+        system:
+          type: string
+          enum:
+            - android
+            - iphone
+            - ipad
+          description: 客户端操作系统类型
+        version:
+          type: string
+        appid:
+          type: string
+          description: 微信必填
+        hb_fq_num:
+          type: string
+          description: 支付宝花呗分期期数，取 `3`、`6` 或 `12`；仅选择支付宝时生效，省略时不分期。
+        tipAmount:
+          $ref: '#/components/schemas/TipAmountV1'
+        expire:
+          $ref: '#/components/schemas/OrderExpireV1'
+    GatewayNativeQROrder:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - type: object
+          properties:
+            tip:
+              $ref: '#/components/schemas/TipAmountV1'
+            redirect:
+              $ref: '#/components/schemas/RedirectUrlV1'
+            expire:
+              $ref: '#/components/schemas/OrderExpireV1'
+    GatewayCardPreOrder:
+      description: 银联在线下单请求体（`channel` 受理，不影响处理）
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - $ref: '#/components/schemas/GatewayIgnoredChannelV1'
+        - type: object
+          properties:
+            tipAmount:
+              $ref: '#/components/schemas/TipAmountV1'
+    GatewayMicroAppOrder:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - type: object
+          properties:
+            customer_id:
+              type: string
+              description: 付款人标识（微信 OpenId / 支付宝 UserId）；微信必填，原生 JSAPI 下单须传
+            appid:
+              type: string
+              description: 微信必填
+            tip:
+              $ref: '#/components/schemas/TipAmountV1'
+    GatewayNativeJsApiOrderV1:
+      description: 原生 JSAPI 下单请求体（`customer_id` 必填）。
+      allOf:
+        - $ref: '#/components/schemas/GatewayMicroAppOrder'
+        - type: object
+          required:
+            - customer_id
+          properties:
+            redirect:
+              $ref: '#/components/schemas/RedirectUrlV1'
+    GatewayQRCodeOrder:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - type: object
+          properties:
+            tipAmount:
+              $ref: '#/components/schemas/TipAmountV1'
+            redirect:
+              $ref: '#/components/schemas/RedirectUrlV1'
+            expire:
+              $ref: '#/components/schemas/OrderExpireV1'
+    GatewayH5Order:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - type: object
+          properties:
+            tipAmount:
+              $ref: '#/components/schemas/TipAmountV1'
+            redirect:
+              $ref: '#/components/schemas/RedirectUrlV1'
+            expire:
+              $ref: '#/components/schemas/OrderExpireV1'
+    GatewayJSAPIOrder:
+      allOf:
+        - $ref: '#/components/schemas/GatewayOnlineOrderV1'
+        - $ref: '#/components/schemas/GatewayJSAPIOrderFieldsV1'
+    GatewayWechatJsApiOrderV1:
+      description: 微信 JSAPI 下单请求体（`channel` 受理，不影响处理）
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - $ref: '#/components/schemas/GatewayIgnoredChannelV1'
+        - $ref: '#/components/schemas/GatewayJSAPIOrderFieldsV1'
+    GatewayJSAPIOrderFieldsV1:
+      type: object
+      description: JSAPI 下单请求的专有字段
+      properties:
+        tipAmount:
+          $ref: '#/components/schemas/TipAmountV1'
+        redirect:
+          $ref: '#/components/schemas/RedirectUrlV1'
+        expire:
+          $ref: '#/components/schemas/OrderExpireV1'
+    GatewayMicroPayOrder:
+      description: 付款码被扫下单请求（不含 `channel`；支付方式由 `auth_code` 自动识别）
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - type: object
+          required:
+            - device_id
+            - auth_code
+          properties:
+            device_id:
+              type: string
+            auth_code:
+              type: string
+              description: 付款码凭据
+            tip:
+              $ref: '#/components/schemas/TipAmountV1'
+            coupons:
+              type: string
+              description: 受理，不影响处理
+    GatewayRetailQRCodeOrder:
+      description: 门店扫码下单请求
+      allOf:
+        - $ref: '#/components/schemas/GatewayOrderBaseV1'
+        - type: object
+          required:
+            - device_id
+          properties:
+            device_id:
+              type: string
+            tip:
+              $ref: '#/components/schemas/TipAmountV1'
+            expire:
+              $ref: '#/components/schemas/OrderExpireV1'
+            directpay:
+              type: boolean
+              description: 受理，不影响处理
+            channel:
+              type: string
+              description: 指定付款人使用的支付方式（取值同 `GatewayOnlineOrderV1.channel`）；省略时生成的二维码可由付款人以任一已开通的钱包扫码支付。
+            operator:
+              type: string
+    RetailQRCodeOrderResultV1:
+      description: 门店扫码下单响应（结构同 `PlaceOrderResultV1`）。
+      allOf:
+        - $ref: '#/components/schemas/PlaceOrderResultV1'
+        - type: object
+          properties:
+            channel:
+              allOf:
+                - $ref: '#/components/schemas/PaymentChannelV1'
+              description: 支付方式（仅请求指定 `channel` 时返回）
+    PlaceOrderResultV1:
+      type: object
+      additionalProperties: true
+      description: |
+        下单响应（凭据字段随支付方式与下单方式返回）。
+        受理成功或订单已建立但未受理（`CREATE_FAIL`）时返回本结构；其他未受理情形返回错误信封 `GatewayErrorV1`，
+        其中渠道受理失败的订单已建立、可按商户订单号查询。
+      required:
+        - return_code
+        - result_code
+        - order_id
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`
+        result_code:
+          type: string
+          enum:
+            - SUCCESS
+            - EXISTS
+            - CREATE_FAIL
+          description: |
+            新单 `SUCCESS` / 已存在 `EXISTS` / 未受理 `CREATE_FAIL`。
+            `CREATE_FAIL` 表示订单已建立但未能受理，不会发生支付；此时 `return_code` 仍为 `SUCCESS`，业务结果以本字段为准，
+            如需重新收款，商户系统应以新的商户订单号重新下单。`CREATE_FAIL` 与订单查询返回的取值一致，可用返回的 `order_id` 查询确认。
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+        order_id:
+          type: string
+          description: 平台订单号。返回本结构时（含 `CREATE_FAIL`）必定返回，可用于查询与对账
+        partner_order_id:
+          type: string
+          description: 商户订单号
+        partner_code:
+          type: string
+          description: 商户编码，与路径参数 `partner_code` 相同
+        full_name:
+          type: string
+          description: 商户注册全称
+        partner_name:
+          type: string
+          description: 商户名称
+        pay_url:
+          type: string
+          description: |
+            本 API 的支付页地址（见概览「支付页约定」）。跳转至校验签名的支付页前，商户须在其上追加 query `time` / `nonce_str` / `sign`
+            （按签名算法为每次跳转重新生成）与 `redirect`（支付后跳回的商户页面，URL 编码）；无需签名的入口见各入口说明。
+            微信 / 支付宝 JSAPI 支付页另可追加 `directpay`。
+        code_url:
+          type: string
+          description: 二维码内容（商户可据此自行生成支付二维码）
+        qrcode_img:
+          type: string
+          description: |
+            二维码图片（Base64 data URI，可直接作 `<img>` 的 `src`）。**条件字段**：仅扫码下单、原生码下单与门店扫码、
+            且返回 `code_url` 时出现。
+        sdk_params:
+          type:
+            - object
+            - string
+          description: |
+            SDK / 原生 JSAPI / 小程序支付所需参数，形态随支付方式：JSON 对象（如微信 SDK、原生 JSAPI、小程序）
+            或字符串（如支付宝 SDK 订单串、银联 SDK 的 `tn`）。商户系统按下单所用支付方式解析。
+    MicroPayResultV1:
+      type: object
+      additionalProperties: true
+      description: |
+        **付款码被扫（B 扫 C）下单响应**，结构与其他下单接口不同：返回支付状态与金额
+        （`result_code` 为支付状态，不是订单创建结果）。
+        新建订单返回 `PAYING`（已受理、处理中）；同步得出结果时为 `PAY_SUCCESS` 或 `PAY_FAIL`。最终状态以订单查询的结果为准。
+        以同一订单号重复下单时按概览「下单通用规则」处理，其中返回既有订单的情形返回 `EXISTS`。
+        `PAYING` 响应同时返回 `tip_fee`、`input_fee`、`available_amount` 与 `customer_id`。
+      required:
+        - return_code
+        - result_code
+        - order_id
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+        result_code:
+          type: string
+          enum:
+            - PAYING
+            - EXISTS
+            - CREATE_FAIL
+            - CLOSED
+            - PAY_FAIL
+            - PAY_SUCCESS
+          description: |
+            支付或受理状态，不表示订单创建结果：
+
+            - `PAYING`：订单已受理，支付结果未定。
+            - `PAY_SUCCESS`：支付成功。
+            - `PAY_FAIL`：支付失败，订单不可再支付；如需重新收款，商户系统应以新的商户订单号重新下单。
+            - `CREATE_FAIL`：订单未受理，不会发生支付，`return_code` 仍为 `SUCCESS`；以同一响应中的 `order_id` 查询，状态同样为
+              `CREATE_FAIL`。如需重新收款，商户系统应以新的商户订单号重新下单。
+            - `CLOSED`：订单已关闭。
+            - `EXISTS`：以同一订单号重复下单，返回既有订单。
+        order_id:
+          type: string
+        partner_order_id:
+          type: string
+        total_fee:
+          type: integer
+          description: 订单金额（最小货币单位整数）
+        real_fee:
+          type: integer
+          description: 实际支付金额（最小货币单位整数）
+        pay_time:
+          allOf:
+            - $ref: '#/components/schemas/V1DateTimeString'
+          description: 支付完成时间（可能缺失，如新建单返回 `PAYING` 时）
+        create_time:
+          $ref: '#/components/schemas/V1DateTimeString'
+        currency:
+          type: string
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+        order_description:
+          type: string
+        tip_fee:
+          type: integer
+          description: 小费金额（最小货币单位整数）
+        input_fee:
+          type: integer
+          description: 商户录入金额（最小货币单位整数）
+        available_amount:
+          type: integer
+          description: 当前可发起退款额（最小货币单位整数）
+        customer_id:
+          type: string
+          description: 付款人在支付渠道的用户标识
+    CardPreOrderRequestV1:
+      type: object
+      description: 卡支付预下单请求。金额以币种主单位的十进制数表示。
+      required:
+        - amount
+        - merchantOrderId
+      properties:
+        amount:
+          type:
+            - string
+            - number
+          description: '**单位：元（币种主单位小数）**。订单金额，币种主单位的十进制数（如 `12.34`）；无法解析为数值时返回 `PARAM_INVALID`。'
+        currency:
+          $ref: '#/components/schemas/OrderCurrencyV1'
+        merchantOrderId:
+          type: string
+          description: 商户订单号，同一商户下唯一；支付页地址以它定位订单。
+        body:
+          type: string
+          description: 订单描述，展示给付款人。
+        subject:
+          type: string
+          description: 订单补充说明。
+        tipAmount:
+          type:
+            - string
+            - number
+          description: '**单位：元（币种主单位小数）**。小费，币种主单位的十进制数；无小费时不传。'
+        notify_url:
+          type: string
+          description: 支付结果通知地址。
+        preAuthOrder:
+          allOf:
+            - $ref: '#/components/schemas/OrderPreauthV1'
+    CardPreOrderResultV1:
+      type: object
+      additionalProperties: true
+      description: 卡支付预下单响应。
+      required:
+        - return_code
+        - order_id
+        - pay_url
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`
+        result_code:
+          type: string
+          enum:
+            - SUCCESS
+            - EXISTS
+          description: 新单 `SUCCESS`；以同一商户订单号重复下单且返回既有订单时为 `EXISTS`。
+        order_id:
+          type: string
+          description: 平台订单号
+        partner_order_id:
+          type: string
+          description: 商户订单号
+        partner_code:
+          type: string
+          description: 商户编码，与路径参数 `partner_code` 相同
+        full_name:
+          type: string
+          description: 商户注册全称
+        partner_name:
+          type: string
+          description: 商户名称
+        currency:
+          type: string
+          description: 订单币种
+        channel:
+          $ref: '#/components/schemas/PaymentChannelV1'
+        pay_url:
+          type: string
+          description: |
+            卡支付收银台地址（见 `openCardPaymentPage`），形如
+            `https://<卡支付接入域名>/creditCardGateway?orderId=<商户订单号>&mchCode=<商户编码>`。
+            跳转前商户系统可追加 `redirect`。
+    ContractOrder:
+      type: object
+      description: 委托代扣签约请求（App 签约与 H5 签约共用）
+      required:
+        - plan_id
+        - description
+        - notify_url
+      properties:
+        contract_no:
+          type: string
+          description: 商户合约号，可不传，以路径参数 `contract_no` 为准
+        plan_id:
+          type: string
+          pattern: ^\d+$
+          maxLength: 64
+          description: 渠道侧代扣模板号（数字）
+        app_id:
+          type: string
+          maxLength: 64
+          description: 商户在渠道的应用标识（选填）
+        channel:
+          type: string
+          description: 可省略；平台按商户开通的代扣渠道受理
+        return_url:
+          type: string
+          description: 仅用于 H5 签约：付款人完成签约后回跳的地址
+        description:
+          type: string
+          maxLength: 255
+          description: 付款人在商户侧的展示名，签约时向付款人展示
+        notify_url:
+          allOf:
+            - $ref: '#/components/schemas/NotifyUrlV1'
+          maxLength: 512
+          description: 签约状态通知地址（格式要求同 `NotifyUrlV1`）
+    ContractPaymentOrder:
+      type: object
+      description: |
+        委托代扣扣款请求。`price` 以给定币种的最小计价单位表示；对有两位小数的币种，
+        `100` 表示 `1.00`。
+      required:
+        - description
+        - price
+        - device_id
+      properties:
+        client_order_id:
+          type: string
+          description: 商户订单号，可不传，以路径参数 `order_id` 为准
+        contract_no:
+          type: string
+          description: 商户合约号，可不传，以路径参数 `contract_no` 为准
+        description:
+          type: string
+          description: 扣款描述
+        notify_url:
+          allOf:
+            - $ref: '#/components/schemas/NotifyUrlV1'
+          description: |
+            支付结果通知地址：扣款成功后平台向该地址发送支付通知，通知内容与下单接口的支付通知相同；不传时不推送。
+            格式要求同 `NotifyUrlV1`。
+        currency:
+          $ref: '#/components/schemas/OrderCurrencyV1'
+        price:
+          allOf:
+            - $ref: '#/components/schemas/AmountIntV1'
+          minimum: 1
+          description: 扣款金额，给定币种最小计价单位的整数，须大于 0；不符合时返回 `PARAM_INVALID`
+        device_id:
+          type: string
+          description: 商户侧设备标识
+        channel:
+          type: string
+          description: 可省略；扣款以签约时的渠道进行，响应中的 `channel` 为支付方式
+    TerminateOrder:
+      type: object
+      required:
+        - termination_note
+      properties:
+        contract_no:
+          type: string
+          description: 商户合约号，可不传，以路径参数 `contract_no` 为准
+        termination_note:
+          type: string
+          maxLength: 255
+          description: 解约原因
+    QueryContractOrderV1:
+      type: object
+      description: 合约查询与 App 签约的响应
+      required:
+        - return_code
+      properties:
+        return_code:
+          type: string
+          const: SUCCESS
+          description: 固定为 `SUCCESS`
+        result_code:
+          allOf:
+            - $ref: '#/components/schemas/ContractStatusV1'
+          description: 合约当前状态
+        channel:
+          type: string
+          description: 签约所用的渠道
+        partner_code:
+          type: string
+          description: 商户编码，与路径参数 `partner_code` 相同
+        full_name:
+          type: string
+          description: 商户注册全称（有值时返回）
+        partner_name:
+          type: string
+          description: 商户名称（有值时返回）
+        partner_contract_no:
+          type: string
+          description: 商户合约号，即路径参数 `contract_no`
+        contract_no:
+          type: string
+          description: 平台合约号，与签约状态通知 `data` 中的 `outContractCode` 相同
+        sdk_params:
+          type: object
+          description: |
+            签约会话参数。**条件字段**：仅当合约以 App 签约创建、`result_code` 为 `NOTSIGN` 且平台持有签约会话时返回，
+            商户 App 凭其调起签约。
+          properties:
+            session_id:
+              type: string
+              description: 签约会话标识
+    ContractStatusV1:
+      type: string
+      description: |
+        合约状态：
+
+        - `NOTSIGN`：合约已创建，付款人尚未完成授权（非终态）。
+        - `SIGNING`：签约处理中（非终态，不可扣款）。
+        - `SIGNED`：签约已生效，可发起扣款。
+        - `TERMINATING`：解约处理中，平台已停止受理该合约的新扣款（非终态）。
+        - `TERMINATED`：已解约（终态）。
+        - `DELETE`：合约已失效（终态）。
+        - `SIGNFAIL`：签约未成功，含签约未能发起与付款人未在签约有效期内完成授权；合约有效期届满时同样为本状态（终态）。
+
+        只有 `SIGNED` 可发起扣款。处于终态的合约不可再用，重新签约须使用新的商户合约号。
+      enum:
+        - NOTSIGN
+        - SIGNING
+        - SIGNED
+        - TERMINATING
+        - TERMINATED
+        - DELETE
+        - SIGNFAIL
+    SigningResponseV1:
+      type: object
+      description: |
+        H5 签约响应。受理成功与签约未能发起时均以 HTTP 200 返回本结构，不含 `return_code`：
+        `signUrl` 非空表示受理成功；`signUrl` 为 `null` 表示签约未能发起，原因见 `code` 与 `message`。
+        字段名使用 camelCase；值为空的字段以 `null` 返回。
+      properties:
+        code:
+          type:
+            - string
+            - 'null'
+          description: 签约未能发起时为渠道返回的错误码；受理成功时为 `null`
+        message:
+          type:
+            - string
+            - 'null'
+          description: 签约未能发起时为渠道返回的错误说明；受理成功时为 `null`
+        sessionId:
+          type:
+            - string
+            - 'null'
+          description: 签约会话标识
+        signUrl:
+          type:
+            - string
+            - 'null'
+          description: 付款人签约页地址；签约未能发起时为 `null`

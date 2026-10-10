@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf8" />
+  <title>AlphaPay Open API v2.0 Webhook</title>
+  <!-- needed for adaptive design -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+    }
+  </style>
+  <script src="https://cdn.redocly.com/redoc/v2.5.3/bundles/redoc.standalone.js"></script><style data-styled="true" data-styled-version="6.4.2">.kktglN{width:calc(100% - 40%);padding:0 40px;}/*!sc*/
+@media print,screen and (max-width: 75rem){.kktglN{width:100%;padding:40px 40px;}}/*!sc*/
+.kmAAAV{width:calc(100% - 40%);padding:0 40px;}/*!sc*/
+@media print,screen and (max-width: 75rem){.kmAAAV{width:100%;padding:0px 40px;}}/*!sc*/
+data-styled.g5[id="sc-hKVpXn"]{content:"kktglN,kmAAAV,"}/*!sc*/
+.jleRXN{padding:40px 0;}/*!sc*/
+.jleRXN:last-child{min-height:calc(100vh + 1px);}/*!sc*/
+.jleRXN>.jleRXN:last-child{min-height:initial;}/*!sc*/
+@media print,screen and (max-width: 75rem){.jleRXN{padding:0;}}/*!sc*/
+.grDwca{padding:40px 0;position:relative;}/*!sc*/
+.grDwca:last-child{min-height:calc(100vh + 1px);}/*!sc*/
+.grDwca>.grDwca:last-child{min-height:initial;}/*!sc*/
+@media print,screen and (max-width: 75rem){.grDwca{padding:0;}}/*!sc*/
+.grDwca:not(:last-of-type):after{position:absolute;bottom:0;width:100%;display:block;content:'';border-bottom:1px solid rgba(0, 0, 0, 0.2);}/*!sc*/
+data-styled.g6[id="sc-eCQgVK"]{content:"jleRXN,grDwca,"}/*!sc*/
+.fpMlmc{width:40%;color:#ffffff;background-color:#263238;padding:0 40px;}/*!sc*/
+@media print,screen and (max-width: 75rem){.fpMlmc{width:100%;padding:40px 40px;}}/*!sc*/
+data-styled.g7[id="sc-jSppWd"]{content:"fpMlmc,"}/*!sc*/
+.bdQQyo{background-color:#263238;}/*!sc*/
+data-styled.g8[id="sc-gKkgUA"]{content:"bdQQyo,"}/*!sc*/
+.lhRBUS{display:flex;width:100%;padding:0;}/*!sc*/
+@media print,screen and (max-width: 75rem){.lhRBUS{flex-direction:column;}}/*!sc*/
+data-styled.g9[id="sc-iCECmn"]{content:"lhRBUS,"}/*!sc*/
+.eRMVDe{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.85714em;line-height:1.6em;color:#333333;}/*!sc*/
+data-styled.g10[id="sc-fuztkK"]{content:"eRMVDe,"}/*!sc*/
+.MOVBZ{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.57143em;line-height:1.6em;color:#333333;margin:0 0 20px;}/*!sc*/
+data-styled.g11[id="sc-qdQOe"]{content:"MOVBZ,"}/*!sc*/
+.iamDfj{color:#ffffff;}/*!sc*/
+data-styled.g13[id="sc-kEbgWM"]{content:"iamDfj,"}/*!sc*/
+.kcvrhp{border-bottom:1px solid rgba(38, 50, 56, 0.3);margin:1em 0 1em 0;color:rgba(38, 50, 56, 0.5);font-weight:normal;text-transform:uppercase;font-size:0.929em;line-height:20px;}/*!sc*/
+data-styled.g14[id="sc-iqkkDd"]{content:"kcvrhp,"}/*!sc*/
+.jmoZom{cursor:pointer;margin-left:-20px;padding:0;line-height:1;width:20px;display:inline-block;outline:0;}/*!sc*/
+.jmoZom:before{content:'';width:15px;height:15px;background-size:contain;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEuMSIgeD0iMCIgeT0iMCIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBlbmFibGUtYmFja2dyb3VuZD0ibmV3IDAgMCA1MTIgNTEyIiB4bWw6c3BhY2U9InByZXNlcnZlIj48cGF0aCBmaWxsPSIjMDEwMTAxIiBkPSJNNDU5LjcgMjMzLjRsLTkwLjUgOTAuNWMtNTAgNTAtMTMxIDUwLTE4MSAwIC03LjktNy44LTE0LTE2LjctMTkuNC0yNS44bDQyLjEtNDIuMWMyLTIgNC41LTMuMiA2LjgtNC41IDIuOSA5LjkgOCAxOS4zIDE1LjggMjcuMiAyNSAyNSA2NS42IDI0LjkgOTAuNSAwbDkwLjUtOTAuNWMyNS0yNSAyNS02NS42IDAtOTAuNSAtMjQuOS0yNS02NS41LTI1LTkwLjUgMGwtMzIuMiAzMi4yYy0yNi4xLTEwLjItNTQuMi0xMi45LTgxLjYtOC45bDY4LjYtNjguNmM1MC01MCAxMzEtNTAgMTgxIDBDNTA5LjYgMTAyLjMgNTA5LjYgMTgzLjQgNDU5LjcgMjMzLjR6TTIyMC4zIDM4Mi4ybC0zMi4yIDMyLjJjLTI1IDI0LjktNjUuNiAyNC45LTkwLjUgMCAtMjUtMjUtMjUtNjUuNiAwLTkwLjVsOTAuNS05MC41YzI1LTI1IDY1LjUtMjUgOTAuNSAwIDcuOCA3LjggMTIuOSAxNy4yIDE1LjggMjcuMSAyLjQtMS40IDQuOC0yLjUgNi44LTQuNWw0Mi4xLTQyYy01LjQtOS4yLTExLjYtMTgtMTkuNC0yNS44IC01MC01MC0xMzEtNTAtMTgxIDBsLTkwLjUgOTAuNWMtNTAgNTAtNTAgMTMxIDAgMTgxIDUwIDUwIDEzMSA1MCAxODEgMGw2OC42LTY4LjZDMjc0LjYgMzk1LjEgMjQ2LjQgMzkyLjMgMjIwLjMgMzgyLjJ6Ii8+PC9zdmc+Cg==');opacity:0.5;visibility:hidden;display:inline-block;vertical-align:middle;}/*!sc*/
+h1:hover>.jmoZom::before,h2:hover>.jmoZom::before,.jmoZom:hover::before{visibility:visible;}/*!sc*/
+data-styled.g15[id="sc-crPgjm"]{content:"jmoZom,"}/*!sc*/
+.kdgFPv{height:18px;width:18px;min-width:18px;vertical-align:middle;float:right;transition:transform 0.2s ease-out;transform:rotateZ(-90deg);}/*!sc*/
+.bEEWJa{height:1.3em;width:1.3em;min-width:1.3em;vertical-align:middle;transition:transform 0.2s ease-out;transform:rotateZ(-90deg);}/*!sc*/
+.kecbEr{height:18px;width:18px;min-width:18px;vertical-align:middle;transition:transform 0.2s ease-out;transform:rotateZ(-90deg);}/*!sc*/
+.gngmNp{height:1.5em;width:1.5em;min-width:1.5em;vertical-align:middle;float:left;transition:transform 0.2s ease-out;transform:rotateZ(-90deg);}/*!sc*/
+.gngmNp polygon{fill:#1d8127;}/*!sc*/
+data-styled.g16[id="sc-dYjPD"]{content:"kdgFPv,bEEWJa,kecbEr,gngmNp,"}/*!sc*/
+.flrlIA{display:inline-block;padding:2px 8px;margin:0;background-color:#32329f;color:#fff;font-size:13px;vertical-align:middle;line-height:1.6;border-radius:4px;font-weight:600;font-size:12px;}/*!sc*/
+.flrlIA +span[type]{margin-left:4px;}/*!sc*/
+data-styled.g17[id="sc-bqqMSY"]{content:"flrlIA,"}/*!sc*/
+.jFNAwF{border-left:1px solid #7c7cbb;box-sizing:border-box;position:relative;padding:10px 10px 10px 0;}/*!sc*/
+@media screen and (max-width: 50rem){.jFNAwF{display:block;overflow:hidden;}}/*!sc*/
+tr:first-of-type>.jFNAwF,tr.last>.jFNAwF{border-left-width:0;background-position:top left;background-repeat:no-repeat;background-size:1px 100%;}/*!sc*/
+tr:first-of-type>.jFNAwF{background-image:linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 22px,
+      #7c7cbb 22px,
+      #7c7cbb 100%
+    );}/*!sc*/
+tr.last>.jFNAwF{background-image:linear-gradient(
+      to bottom,
+      #7c7cbb 0%,
+      #7c7cbb 22px,
+      transparent 22px,
+      transparent 100%
+    );}/*!sc*/
+tr.last+tr>.jFNAwF{border-left-color:transparent;}/*!sc*/
+tr.last:first-child>.jFNAwF{background:none;border-left-color:transparent;}/*!sc*/
+data-styled.g19[id="sc-hCcPtG"]{content:"jFNAwF,"}/*!sc*/
+.lcdEEX{vertical-align:top;line-height:20px;white-space:nowrap;font-size:13px;font-family:Courier,monospace;}/*!sc*/
+.lcdEEX.deprecated{text-decoration:line-through;color:#707070;}/*!sc*/
+data-styled.g21[id="sc-fFCZOx"]{content:"lcdEEX,"}/*!sc*/
+.gLpZiQ{border-bottom:1px solid #9fb4be;padding:10px 0;width:75%;box-sizing:border-box;}/*!sc*/
+tr.expanded .gLpZiQ{border-bottom:none;}/*!sc*/
+@media screen and (max-width: 50rem){.gLpZiQ{padding:0 20px;border-bottom:none;border-left:1px solid #7c7cbb;}tr.last>.gLpZiQ{border-left:none;}}/*!sc*/
+data-styled.g22[id="sc-bjLslk"]{content:"gLpZiQ,"}/*!sc*/
+.kkMuqc{color:#7c7cbb;font-family:Courier,monospace;margin-right:10px;}/*!sc*/
+.kkMuqc::before{content:'';display:inline-block;vertical-align:middle;width:10px;height:1px;background:#7c7cbb;}/*!sc*/
+.kkMuqc::after{content:'';display:inline-block;vertical-align:middle;width:1px;background:#7c7cbb;height:7px;}/*!sc*/
+data-styled.g23[id="sc-ieCSdj"]{content:"kkMuqc,"}/*!sc*/
+.bsjUmE{border-collapse:separate;border-radius:3px;font-size:14px;border-spacing:0;width:100%;}/*!sc*/
+.bsjUmE >tr{vertical-align:middle;}/*!sc*/
+@media screen and (max-width: 50rem){.bsjUmE{display:block;}.bsjUmE >tr,.bsjUmE >tbody>tr{display:block;}}/*!sc*/
+@media screen and (max-width: 50rem) and (-ms-high-contrast:none){.bsjUmE td{float:left;width:100%;}}/*!sc*/
+.bsjUmE .sc-dILkzW,.bsjUmE .sc-dILkzW .sc-dILkzW .sc-dILkzW,.bsjUmE .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW{margin:1em;margin-right:0;background:#fafafa;}/*!sc*/
+.bsjUmE .sc-dILkzW .sc-dILkzW,.bsjUmE .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW,.bsjUmE .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW .sc-dILkzW{background:#ffffff;}/*!sc*/
+data-styled.g25[id="sc-hHopjF"]{content:"bsjUmE,"}/*!sc*/
+.kibfTX >ul{list-style:none;padding:0;margin:0;margin:0 -5px;}/*!sc*/
+.kibfTX >ul >li{padding:5px 10px;display:inline-block;background-color:#11171a;border-bottom:1px solid rgba(0, 0, 0, 0.5);cursor:pointer;text-align:center;outline:none;color:#ccc;margin:0 5px 5px 5px;border:1px solid #07090b;border-radius:5px;min-width:60px;font-size:0.9em;font-weight:bold;}/*!sc*/
+.kibfTX >ul >li.react-tabs__tab--selected{color:#333333;background:#ffffff;}/*!sc*/
+.kibfTX >ul >li.react-tabs__tab--selected:focus{outline:auto;}/*!sc*/
+.kibfTX >ul >li:only-child{flex:none;min-width:100px;}/*!sc*/
+.kibfTX >ul >li.tab-success{color:#1d8127;}/*!sc*/
+.kibfTX >ul >li.tab-redirect{color:#ffa500;}/*!sc*/
+.kibfTX >ul >li.tab-info{color:#87ceeb;}/*!sc*/
+.kibfTX >ul >li.tab-error{color:#d41f1c;}/*!sc*/
+.kibfTX >.react-tabs__tab-panel{background:#11171a;}/*!sc*/
+.kibfTX >.react-tabs__tab-panel>div,.kibfTX >.react-tabs__tab-panel>pre{padding:20px;margin:0;}/*!sc*/
+.kibfTX >.react-tabs__tab-panel>div>pre{padding:0;}/*!sc*/
+data-styled.g31[id="sc-cxxQMU"]{content:"kibfTX,"}/*!sc*/
+.fiNpIH code[class*='language-'],.fiNpIH pre[class*='language-']{text-shadow:0 -0.1em 0.2em black;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.5;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none;}/*!sc*/
+@media print{.fiNpIH code[class*='language-'],.fiNpIH pre[class*='language-']{text-shadow:none;}}/*!sc*/
+.fiNpIH pre[class*='language-']{padding:1em;margin:0.5em 0;overflow:auto;}/*!sc*/
+.fiNpIH .token.comment,.fiNpIH .token.prolog,.fiNpIH .token.doctype,.fiNpIH .token.cdata{color:hsl(30, 20%, 50%);}/*!sc*/
+.fiNpIH .token.punctuation{opacity:0.7;}/*!sc*/
+.fiNpIH .namespace{opacity:0.7;}/*!sc*/
+.fiNpIH .token.property,.fiNpIH .token.tag,.fiNpIH .token.number,.fiNpIH .token.constant,.fiNpIH .token.symbol{color:#4a8bb3;}/*!sc*/
+.fiNpIH .token.boolean{color:#e64441;}/*!sc*/
+.fiNpIH .token.selector,.fiNpIH .token.attr-name,.fiNpIH .token.string,.fiNpIH .token.char,.fiNpIH .token.builtin,.fiNpIH .token.inserted{color:#a0fbaa;}/*!sc*/
+.fiNpIH .token.selector+a,.fiNpIH .token.attr-name+a,.fiNpIH .token.string+a,.fiNpIH .token.char+a,.fiNpIH .token.builtin+a,.fiNpIH .token.inserted+a,.fiNpIH .token.selector+a:visited,.fiNpIH .token.attr-name+a:visited,.fiNpIH .token.string+a:visited,.fiNpIH .token.char+a:visited,.fiNpIH .token.builtin+a:visited,.fiNpIH .token.inserted+a:visited{color:#4ed2ba;text-decoration:underline;}/*!sc*/
+.fiNpIH .token.property.string{color:white;}/*!sc*/
+.fiNpIH .token.operator,.fiNpIH .token.entity,.fiNpIH .token.url,.fiNpIH .token.variable{color:hsl(40, 90%, 60%);}/*!sc*/
+.fiNpIH .token.atrule,.fiNpIH .token.attr-value,.fiNpIH .token.keyword{color:hsl(350, 40%, 70%);}/*!sc*/
+.fiNpIH .token.regex,.fiNpIH .token.important{color:#e90;}/*!sc*/
+.fiNpIH .token.important,.fiNpIH .token.bold{font-weight:bold;}/*!sc*/
+.fiNpIH .token.italic{font-style:italic;}/*!sc*/
+.fiNpIH .token.entity{cursor:help;}/*!sc*/
+.fiNpIH .token.deleted{color:red;}/*!sc*/
+data-styled.g33[id="sc-iJSMbW"]{content:"fiNpIH,"}/*!sc*/
+.dzKJV{opacity:0.7;transition:opacity 0.3s ease;text-align:right;}/*!sc*/
+.dzKJV:focus-within{opacity:1;}/*!sc*/
+.dzKJV >button{background-color:transparent;border:0;color:inherit;padding:2px 10px;font-family:Roboto,sans-serif;font-size:14px;line-height:1.5em;cursor:pointer;outline:0;}/*!sc*/
+.dzKJV >button :hover,.dzKJV >button :focus{background:rgba(255, 255, 255, 0.1);}/*!sc*/
+data-styled.g34[id="sc-giQkEn"]{content:"dzKJV,"}/*!sc*/
+.iOXjCz{position:relative;}/*!sc*/
+data-styled.g38[id="sc-kLEbxe"]{content:"iOXjCz,"}/*!sc*/
+.kxMqOs{margin-left:10px;text-transform:none;font-size:0.929em;color:black;}/*!sc*/
+data-styled.g42[id="sc-gXvOjn"]{content:"kxMqOs,"}/*!sc*/
+.ewCFMV{font-family:Roboto,sans-serif;font-weight:400;line-height:1.5em;}/*!sc*/
+.ewCFMV p:last-child{margin-bottom:0;}/*!sc*/
+.ewCFMV h1{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.85714em;line-height:1.6em;color:#32329f;margin-top:0;}/*!sc*/
+.ewCFMV h2{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.57143em;line-height:1.6em;color:#333333;}/*!sc*/
+.ewCFMV code{color:#e53935;background-color:rgba(38, 50, 56, 0.05);font-family:Courier,monospace;border-radius:2px;border:1px solid rgba(38, 50, 56, 0.1);padding:0 5px;font-size:13px;font-weight:400;word-break:break-word;}/*!sc*/
+.ewCFMV pre{font-family:Courier,monospace;white-space:pre;background-color:#11171a;color:white;padding:20px;overflow-x:auto;line-height:normal;border-radius:0;border:1px solid rgba(38, 50, 56, 0.1);}/*!sc*/
+.ewCFMV pre code{background-color:transparent;color:white;padding:0;}/*!sc*/
+.ewCFMV pre code:before,.ewCFMV pre code:after{content:none;}/*!sc*/
+.ewCFMV blockquote{margin:0;margin-bottom:1em;padding:0 15px;color:#777;border-left:4px solid #ddd;}/*!sc*/
+.ewCFMV img{max-width:100%;box-sizing:content-box;}/*!sc*/
+.ewCFMV ul,.ewCFMV ol{padding-left:2em;margin:0;margin-bottom:1em;}/*!sc*/
+.ewCFMV ul ul,.ewCFMV ol ul,.ewCFMV ul ol,.ewCFMV ol ol{margin-bottom:0;margin-top:0;}/*!sc*/
+.ewCFMV table{display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all;border-collapse:collapse;border-spacing:0;margin-top:1.5em;margin-bottom:1.5em;}/*!sc*/
+.ewCFMV table tr{background-color:#fff;border-top:1px solid #ccc;}/*!sc*/
+.ewCFMV table tr:nth-child(2n){background-color:#fafafa;}/*!sc*/
+.ewCFMV table th,.ewCFMV table td{padding:6px 13px;border:1px solid #ddd;}/*!sc*/
+.ewCFMV table th{text-align:left;font-weight:bold;}/*!sc*/
+.ewCFMV .share-link{cursor:pointer;margin-left:-20px;padding:0;line-height:1;width:20px;display:inline-block;outline:0;}/*!sc*/
+.ewCFMV .share-link:before{content:'';width:15px;height:15px;background-size:contain;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEuMSIgeD0iMCIgeT0iMCIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBlbmFibGUtYmFja2dyb3VuZD0ibmV3IDAgMCA1MTIgNTEyIiB4bWw6c3BhY2U9InByZXNlcnZlIj48cGF0aCBmaWxsPSIjMDEwMTAxIiBkPSJNNDU5LjcgMjMzLjRsLTkwLjUgOTAuNWMtNTAgNTAtMTMxIDUwLTE4MSAwIC03LjktNy44LTE0LTE2LjctMTkuNC0yNS44bDQyLjEtNDIuMWMyLTIgNC41LTMuMiA2LjgtNC41IDIuOSA5LjkgOCAxOS4zIDE1LjggMjcuMiAyNSAyNSA2NS42IDI0LjkgOTAuNSAwbDkwLjUtOTAuNWMyNS0yNSAyNS02NS42IDAtOTAuNSAtMjQuOS0yNS02NS41LTI1LTkwLjUgMGwtMzIuMiAzMi4yYy0yNi4xLTEwLjItNTQuMi0xMi45LTgxLjYtOC45bDY4LjYtNjguNmM1MC01MCAxMzEtNTAgMTgxIDBDNTA5LjYgMTAyLjMgNTA5LjYgMTgzLjQgNDU5LjcgMjMzLjR6TTIyMC4zIDM4Mi4ybC0zMi4yIDMyLjJjLTI1IDI0LjktNjUuNiAyNC45LTkwLjUgMCAtMjUtMjUtMjUtNjUuNiAwLTkwLjVsOTAuNS05MC41YzI1LTI1IDY1LjUtMjUgOTAuNSAwIDcuOCA3LjggMTIuOSAxNy4yIDE1LjggMjcuMSAyLjQtMS40IDQuOC0yLjUgNi44LTQuNWw0Mi4xLTQyYy01LjQtOS4yLTExLjYtMTgtMTkuNC0yNS44IC01MC01MC0xMzEtNTAtMTgxIDBsLTkwLjUgOTAuNWMtNTAgNTAtNTAgMTMxIDAgMTgxIDUwIDUwIDEzMSA1MCAxODEgMGw2OC42LTY4LjZDMjc0LjYgMzk1LjEgMjQ2LjQgMzkyLjMgMjIwLjMgMzgyLjJ6Ii8+PC9zdmc+Cg==');opacity:0.5;visibility:hidden;display:inline-block;vertical-align:middle;}/*!sc*/
+.ewCFMV h1:hover>.share-link::before,.ewCFMV h2:hover>.share-link::before,.ewCFMV .share-link:hover::before{visibility:visible;}/*!sc*/
+.ewCFMV a{text-decoration:auto;color:#32329f;}/*!sc*/
+.ewCFMV a:visited{color:#32329f;}/*!sc*/
+.ewCFMV a:hover{color:#6868cf;text-decoration:auto;}/*!sc*/
+.bAoMjv{font-family:Roboto,sans-serif;font-weight:400;line-height:1.5em;}/*!sc*/
+.bAoMjv p:last-child{margin-bottom:0;}/*!sc*/
+.bAoMjv p:first-child{margin-top:0;}/*!sc*/
+.bAoMjv p:last-child{margin-bottom:0;}/*!sc*/
+.bAoMjv h1{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.85714em;line-height:1.6em;color:#32329f;margin-top:0;}/*!sc*/
+.bAoMjv h2{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.57143em;line-height:1.6em;color:#333333;}/*!sc*/
+.bAoMjv code{color:#e53935;background-color:rgba(38, 50, 56, 0.05);font-family:Courier,monospace;border-radius:2px;border:1px solid rgba(38, 50, 56, 0.1);padding:0 5px;font-size:13px;font-weight:400;word-break:break-word;}/*!sc*/
+.bAoMjv pre{font-family:Courier,monospace;white-space:pre;background-color:#11171a;color:white;padding:20px;overflow-x:auto;line-height:normal;border-radius:0;border:1px solid rgba(38, 50, 56, 0.1);}/*!sc*/
+.bAoMjv pre code{background-color:transparent;color:white;padding:0;}/*!sc*/
+.bAoMjv pre code:before,.bAoMjv pre code:after{content:none;}/*!sc*/
+.bAoMjv blockquote{margin:0;margin-bottom:1em;padding:0 15px;color:#777;border-left:4px solid #ddd;}/*!sc*/
+.bAoMjv img{max-width:100%;box-sizing:content-box;}/*!sc*/
+.bAoMjv ul,.bAoMjv ol{padding-left:2em;margin:0;margin-bottom:1em;}/*!sc*/
+.bAoMjv ul ul,.bAoMjv ol ul,.bAoMjv ul ol,.bAoMjv ol ol{margin-bottom:0;margin-top:0;}/*!sc*/
+.bAoMjv table{display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all;border-collapse:collapse;border-spacing:0;margin-top:1.5em;margin-bottom:1.5em;}/*!sc*/
+.bAoMjv table tr{background-color:#fff;border-top:1px solid #ccc;}/*!sc*/
+.bAoMjv table tr:nth-child(2n){background-color:#fafafa;}/*!sc*/
+.bAoMjv table th,.bAoMjv table td{padding:6px 13px;border:1px solid #ddd;}/*!sc*/
+.bAoMjv table th{text-align:left;font-weight:bold;}/*!sc*/
+.bAoMjv .share-link{cursor:pointer;margin-left:-20px;padding:0;line-height:1;width:20px;display:inline-block;outline:0;}/*!sc*/
+.bAoMjv .share-link:before{content:'';width:15px;height:15px;background-size:contain;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEuMSIgeD0iMCIgeT0iMCIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBlbmFibGUtYmFja2dyb3VuZD0ibmV3IDAgMCA1MTIgNTEyIiB4bWw6c3BhY2U9InByZXNlcnZlIj48cGF0aCBmaWxsPSIjMDEwMTAxIiBkPSJNNDU5LjcgMjMzLjRsLTkwLjUgOTAuNWMtNTAgNTAtMTMxIDUwLTE4MSAwIC03LjktNy44LTE0LTE2LjctMTkuNC0yNS44bDQyLjEtNDIuMWMyLTIgNC41LTMuMiA2LjgtNC41IDIuOSA5LjkgOCAxOS4zIDE1LjggMjcuMiAyNSAyNSA2NS42IDI0LjkgOTAuNSAwbDkwLjUtOTAuNWMyNS0yNSAyNS02NS42IDAtOTAuNSAtMjQuOS0yNS02NS41LTI1LTkwLjUgMGwtMzIuMiAzMi4yYy0yNi4xLTEwLjItNTQuMi0xMi45LTgxLjYtOC45bDY4LjYtNjguNmM1MC01MCAxMzEtNTAgMTgxIDBDNTA5LjYgMTAyLjMgNTA5LjYgMTgzLjQgNDU5LjcgMjMzLjR6TTIyMC4zIDM4Mi4ybC0zMi4yIDMyLjJjLTI1IDI0LjktNjUuNiAyNC45LTkwLjUgMCAtMjUtMjUtMjUtNjUuNiAwLTkwLjVsOTAuNS05MC41YzI1LTI1IDY1LjUtMjUgOTAuNSAwIDcuOCA3LjggMTIuOSAxNy4yIDE1LjggMjcuMSAyLjQtMS40IDQuOC0yLjUgNi44LTQuNWw0Mi4xLTQyYy01LjQtOS4yLTExLjYtMTgtMTkuNC0yNS44IC01MC01MC0xMzEtNTAtMTgxIDBsLTkwLjUgOTAuNWMtNTAgNTAtNTAgMTMxIDAgMTgxIDUwIDUwIDEzMSA1MCAxODEgMGw2OC42LTY4LjZDMjc0LjYgMzk1LjEgMjQ2LjQgMzkyLjMgMjIwLjMgMzgyLjJ6Ii8+PC9zdmc+Cg==');opacity:0.5;visibility:hidden;display:inline-block;vertical-align:middle;}/*!sc*/
+.bAoMjv h1:hover>.share-link::before,.bAoMjv h2:hover>.share-link::before,.bAoMjv .share-link:hover::before{visibility:visible;}/*!sc*/
+.bAoMjv a{text-decoration:auto;color:#32329f;}/*!sc*/
+.bAoMjv a:visited{color:#32329f;}/*!sc*/
+.bAoMjv a:hover{color:#6868cf;text-decoration:auto;}/*!sc*/
+.dNfUH{font-family:Roboto,sans-serif;font-weight:400;line-height:1.5em;}/*!sc*/
+.dNfUH p:last-child{margin-bottom:0;}/*!sc*/
+.dNfUH p:first-child{margin-top:0;}/*!sc*/
+.dNfUH p:last-child{margin-bottom:0;}/*!sc*/
+.dNfUH p{display:inline-block;}/*!sc*/
+.dNfUH h1{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.85714em;line-height:1.6em;color:#32329f;margin-top:0;}/*!sc*/
+.dNfUH h2{font-family:Montserrat,sans-serif;font-weight:400;font-size:1.57143em;line-height:1.6em;color:#333333;}/*!sc*/
+.dNfUH code{color:#e53935;background-color:rgba(38, 50, 56, 0.05);font-family:Courier,monospace;border-radius:2px;border:1px solid rgba(38, 50, 56, 0.1);padding:0 5px;font-size:13px;font-weight:400;word-break:break-word;}/*!sc*/
+.dNfUH pre{font-family:Courier,monospace;white-space:pre;background-color:#11171a;color:white;padding:20px;overflow-x:auto;line-height:normal;border-radius:0;border:1px solid rgba(38, 50, 56, 0.1);}/*!sc*/
+.dNfUH pre code{background-color:transparent;color:white;padding:0;}/*!sc*/
+.dNfUH pre code:before,.dNfUH pre code:after{content:none;}/*!sc*/
+.dNfUH blockquote{margin:0;margin-bottom:1em;padding:0 15px;color:#777;border-left:4px solid #ddd;}/*!sc*/
+.dNfUH img{max-width:100%;box-sizing:content-box;}/*!sc*/
+.dNfUH ul,.dNfUH ol{padding-left:2em;margin:0;margin-bottom:1em;}/*!sc*/
+.dNfUH ul ul,.dNfUH ol ul,.dNfUH ul ol,.dNfUH ol ol{margin-bottom:0;margin-top:0;}/*!sc*/
+.dNfUH table{display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all;border-collapse:collapse;border-spacing:0;margin-top:1.5em;margin-bottom:1.5em;}/*!sc*/
+.dNfUH table tr{background-color:#fff;border-top:1px solid #ccc;}/*!sc*/
+.dNfUH table tr:nth-child(2n){background-color:#fafafa;}/*!sc*/
+.dNfUH table th,.dNfUH table td{padding:6px 13px;border:1px solid #ddd;}/*!sc*/
+.dNfUH table th{text-align:left;font-weight:bold;}/*!sc*/
+.dNfUH .share-link{cursor:pointer;margin-left:-20px;padding:0;line-height:1;width:20px;display:inline-block;outline:0;}/*!sc*/
+.dNfUH .share-link:before{content:'';width:15px;height:15px;background-size:contain;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEuMSIgeD0iMCIgeT0iMCIgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiBlbmFibGUtYmFja2dyb3VuZD0ibmV3IDAgMCA1MTIgNTEyIiB4bWw6c3BhY2U9InByZXNlcnZlIj48cGF0aCBmaWxsPSIjMDEwMTAxIiBkPSJNNDU5LjcgMjMzLjRsLTkwLjUgOTAuNWMtNTAgNTAtMTMxIDUwLTE4MSAwIC03LjktNy44LTE0LTE2LjctMTkuNC0yNS44bDQyLjEtNDIuMWMyLTIgNC41LTMuMiA2LjgtNC41IDIuOSA5LjkgOCAxOS4zIDE1LjggMjcuMiAyNSAyNSA2NS42IDI0LjkgOTAuNSAwbDkwLjUtOTAuNWMyNS0yNSAyNS02NS42IDAtOTAuNSAtMjQuOS0yNS02NS41LTI1LTkwLjUgMGwtMzIuMiAzMi4yYy0yNi4xLTEwLjItNTQuMi0xMi45LTgxLjYtOC45bDY4LjYtNjguNmM1MC01MCAxMzEtNTAgMTgxIDBDNTA5LjYgMTAyLjMgNTA5LjYgMTgzLjQgNDU5LjcgMjMzLjR6TTIyMC4zIDM4Mi4ybC0zMi4yIDMyLjJjLTI1IDI0LjktNjUuNiAyNC45LTkwLjUgMCAtMjUtMjUtMjUtNjUuNiAwLTkwLjVsOTAuNS05MC41YzI1LTI1IDY1LjUtMjUgOTAuNSAwIDcuOCA3LjggMTIuOSAxNy4yIDE1LjggMjcuMSAyLjQtMS40IDQuOC0yLjUgNi44LTQuNWw0Mi4xLTQyYy01LjQtOS4yLTExLjYtMTgtMTkuNC0yNS44IC01MC01MC0xMzEtNTAtMTgxIDBsLTkwLjUgOTAuNWMtNTAgNTAtNTAgMTMxIDAgMTgxIDUwIDUwIDEzMSA1MCAxODEgMGw2OC42LTY4LjZDMjc0LjYgMzk1LjEgMjQ2LjQgMzkyLjMgMjIwLjMgMzgyLjJ6Ii8+PC9zdmc+Cg==');opacity:0.5;visibility:hidden;display:inline-block;vertical-align:middle;}/*!sc*/
+.dNfUH h1:hover>.share-link::before,.dNfUH h2:hover>.share-link::before,.dNfUH .share-link:hover::before{visibility:visible;}/*!sc*/
+.dNfUH a{text-decoration:auto;color:#32329f;}/*!sc*/
+.dNfUH a:visited{color:#32329f;}/*!sc*/
+.dNfUH a:hover{color:#6868cf;text-decoration:auto;}/*!sc*/
+data-styled.g43[id="sc-cBEgGa"]{content:"ewCFMV,bAoMjv,dNfUH,"}/*!sc*/
+.dDDioG{display:inline;}/*!sc*/
+data-styled.g44[id="sc-ciCrSJ"]{content:"dDDioG,"}/*!sc*/
+.feYhXE{position:relative;}/*!sc*/
+data-styled.g45[id="sc-jcgtOs"]{content:"feYhXE,"}/*!sc*/
+.hHzuQA:hover>.sc-giQkEn{opacity:1;}/*!sc*/
+data-styled.g50[id="sc-cTZdpT"]{content:"hHzuQA,"}/*!sc*/
+.jgTAJz{font-family:Courier,monospace;font-size:13px;white-space:pre;contain:content;overflow-x:auto;}/*!sc*/
+.jgTAJz .redoc-json code>.collapser{display:none;pointer-events:none;}/*!sc*/
+.jgTAJz .callback-function{color:gray;}/*!sc*/
+.jgTAJz .collapser:after{content:'-';cursor:pointer;}/*!sc*/
+.jgTAJz .collapsed>.collapser:after{content:'+';cursor:pointer;}/*!sc*/
+.jgTAJz .ellipsis:after{content:' … ';}/*!sc*/
+.jgTAJz .collapsible{margin-left:2em;}/*!sc*/
+.jgTAJz .hoverable{padding-top:1px;padding-bottom:1px;padding-left:2px;padding-right:2px;border-radius:2px;}/*!sc*/
+.jgTAJz .hovered{background-color:rgba(235, 238, 249, 1);}/*!sc*/
+.jgTAJz .collapser{background-color:transparent;border:0;color:#fff;font-family:Courier,monospace;font-size:13px;padding-right:6px;padding-left:6px;padding-top:0;padding-bottom:0;display:flex;align-items:center;justify-content:center;width:15px;height:15px;position:absolute;top:4px;left:-1.5em;cursor:default;user-select:none;-webkit-user-select:none;padding:2px;}/*!sc*/
+.jgTAJz .collapser:focus{outline-color:#fff;outline-style:dotted;outline-width:1px;}/*!sc*/
+.jgTAJz ul{list-style-type:none;padding:0px;margin:0px 0px 0px 26px;}/*!sc*/
+.jgTAJz li{position:relative;display:block;}/*!sc*/
+.jgTAJz .hoverable{display:inline-block;}/*!sc*/
+.jgTAJz .selected{outline-style:solid;outline-width:1px;outline-style:dotted;}/*!sc*/
+.jgTAJz .collapsed>.collapsible{display:none;}/*!sc*/
+.jgTAJz .ellipsis{display:none;}/*!sc*/
+.jgTAJz .collapsed>.ellipsis{display:inherit;}/*!sc*/
+data-styled.g51[id="sc-jNDflC"]{content:"jgTAJz,"}/*!sc*/
+.kgKexQ{padding:0.9em;background-color:rgba(38,50,56,0.4);margin:0 0 10px 0;display:block;font-family:Montserrat,sans-serif;font-size:0.929em;line-height:1.5em;}/*!sc*/
+data-styled.g52[id="sc-dPqFhK"]{content:"kgKexQ,"}/*!sc*/
+.BuCyN{font-family:Montserrat,sans-serif;font-size:12px;position:absolute;z-index:1;top:-11px;left:12px;font-weight:600;color:rgba(255,255,255,0.7);}/*!sc*/
+data-styled.g53[id="sc-bBzIOb"]{content:"BuCyN,"}/*!sc*/
+.bMFMGt{position:relative;}/*!sc*/
+data-styled.g54[id="sc-cNSlRw"]{content:"bMFMGt,"}/*!sc*/
+.jUCYlq{margin-top:15px;}/*!sc*/
+data-styled.g57[id="sc-hUheUT"]{content:"jUCYlq,"}/*!sc*/
+.QbYuY.deprecated span.property-name{text-decoration:line-through;color:#707070;}/*!sc*/
+.QbYuY button{background-color:transparent;border:0;outline:0;font-size:13px;font-family:Courier,monospace;cursor:pointer;padding:0;color:#333333;}/*!sc*/
+.QbYuY button:focus{font-weight:600;}/*!sc*/
+.QbYuY .sc-dYjPD{height:1.1em;width:1.1em;}/*!sc*/
+.QbYuY .sc-dYjPD polygon{fill:#666;}/*!sc*/
+data-styled.g58[id="sc-jgzHYo"]{content:"QbYuY,"}/*!sc*/
+.jMRTsl{vertical-align:middle;font-size:13px;line-height:20px;}/*!sc*/
+data-styled.g59[id="sc-gSILEF"]{content:"jMRTsl,"}/*!sc*/
+.NncTE{color:rgba(102,102,102,0.9);}/*!sc*/
+data-styled.g60[id="sc-lbpDNm"]{content:"NncTE,"}/*!sc*/
+.kUjPnZ{color:#666;}/*!sc*/
+data-styled.g61[id="sc-iNyHtD"]{content:"kUjPnZ,"}/*!sc*/
+.dHYagA{color:#d41f1c;font-size:0.9em;font-weight:normal;margin-left:20px;line-height:1;}/*!sc*/
+data-styled.g63[id="sc-eIYgEQ"]{content:"dHYagA,"}/*!sc*/
+.ctiotw{color:#6868cf;}/*!sc*/
+data-styled.g64[id="sc-otWXT"]{content:"ctiotw,"}/*!sc*/
+.OXDYs{border-radius:2px;word-break:break-word;background-color:rgba(51,51,51,0.05);color:rgba(51,51,51,0.9);padding:0 5px;border:1px solid rgba(51,51,51,0.1);font-family:Courier,monospace;}/*!sc*/
+.sc-lbFCLI+.sc-lbFCLI{margin-left:0;}/*!sc*/
+data-styled.g67[id="sc-lbFCLI"]{content:"OXDYs,"}/*!sc*/
+.enoyBT{border-radius:2px;background-color:rgba(104,104,207,0.05);color:rgba(50,50,159,0.9);margin:0 5px;padding:0 5px;border:1px solid rgba(50,50,159,0.1);}/*!sc*/
+.sc-cljLBy+.sc-cljLBy{margin-left:0;}/*!sc*/
+data-styled.g69[id="sc-cljLBy"]{content:"enoyBT,"}/*!sc*/
+.hzxDQO:after{content:' and ';font-weight:normal;}/*!sc*/
+.hzxDQO:last-child:after{content:none;}/*!sc*/
+.hzxDQO a{text-decoration:auto;color:#32329f;}/*!sc*/
+.hzxDQO a:visited{color:#32329f;}/*!sc*/
+.hzxDQO a:hover{color:#6868cf;text-decoration:auto;}/*!sc*/
+data-styled.g82[id="sc-hPfayn"]{content:"hzxDQO,"}/*!sc*/
+.dVYuXz{white-space:nowrap;}/*!sc*/
+.dVYuXz:after{content:' or ';white-space:pre;}/*!sc*/
+.dVYuXz:last-child:after,.dVYuXz:only-child:after{content:none;}/*!sc*/
+.dVYuXz a{text-decoration:auto;color:#32329f;}/*!sc*/
+.dVYuXz a:visited{color:#32329f;}/*!sc*/
+.dVYuXz a:hover{color:#6868cf;text-decoration:auto;}/*!sc*/
+data-styled.g83[id="sc-dtnsVa"]{content:"dVYuXz,"}/*!sc*/
+.jdqJPb{flex:1 1 auto;cursor:pointer;}/*!sc*/
+data-styled.g84[id="sc-dalEhJ"]{content:"jdqJPb,"}/*!sc*/
+.cVAkzL{width:75%;text-overflow:ellipsis;border-radius:4px;overflow:hidden;}/*!sc*/
+@media screen and (max-width: 50rem){.cVAkzL{margin-top:10px;}}/*!sc*/
+data-styled.g85[id="sc-jTPGds"]{content:"cVAkzL,"}/*!sc*/
+.kEkHzF{display:inline-block;margin:0;}/*!sc*/
+data-styled.g86[id="sc-jQQpTv"]{content:"kEkHzF,"}/*!sc*/
+.kGZLat{width:100%;display:flex;margin:1em 0;flex-direction:row;}/*!sc*/
+@media screen and (max-width: 50rem){.kGZLat{flex-direction:column;}}/*!sc*/
+data-styled.g87[id="sc-fuYIqi"]{content:"kGZLat,"}/*!sc*/
+.cBgvIi{margin-top:0;margin-bottom:0.5em;}/*!sc*/
+data-styled.g93[id="sc-ctiVdb"]{content:"cBgvIi,"}/*!sc*/
+.jjsIAS{width:9ex;display:inline-block;height:13px;line-height:13px;background-color:#333;border-radius:3px;background-repeat:no-repeat;background-position:6px 4px;font-size:7px;font-family:Verdana,sans-serif;color:white;text-transform:uppercase;text-align:center;font-weight:bold;vertical-align:middle;margin-right:6px;margin-top:2px;}/*!sc*/
+.jjsIAS.get{background-color:#2F8132;}/*!sc*/
+.jjsIAS.post{background-color:#186FAF;}/*!sc*/
+.jjsIAS.put{background-color:#95507c;}/*!sc*/
+.jjsIAS.options{background-color:#947014;}/*!sc*/
+.jjsIAS.patch{background-color:#bf581d;}/*!sc*/
+.jjsIAS.delete{background-color:#cc3333;}/*!sc*/
+.jjsIAS.basic{background-color:#707070;}/*!sc*/
+.jjsIAS.link{background-color:#07818F;}/*!sc*/
+.jjsIAS.head{background-color:#A23DAD;}/*!sc*/
+.jjsIAS.hook{background-color:#32329f;}/*!sc*/
+.jjsIAS.schema{background-color:#707070;}/*!sc*/
+data-styled.g101[id="sc-XpSrr"]{content:"jjsIAS,"}/*!sc*/
+.dqIuaF{margin:0;padding:0;}/*!sc*/
+.dqIuaF:first-child{padding-bottom:32px;}/*!sc*/
+.sc-ilnrqe .sc-ilnrqe{font-size:0.929em;}/*!sc*/
+.gTfiRs{margin:0;padding:0;display:none;}/*!sc*/
+.gTfiRs:first-child{padding-bottom:32px;}/*!sc*/
+.sc-ilnrqe .sc-ilnrqe{font-size:0.929em;}/*!sc*/
+data-styled.g102[id="sc-ilnrqe"]{content:"dqIuaF,gTfiRs,"}/*!sc*/
+.cQETmj{list-style:none inside none;overflow:hidden;text-overflow:ellipsis;padding:0;}/*!sc*/
+data-styled.g103[id="sc-uMZhz"]{content:"cQETmj,"}/*!sc*/
+.buxoPL{cursor:pointer;color:#333333;margin:0;padding:12.5px 20px;display:flex;justify-content:space-between;font-family:Montserrat,sans-serif;font-size:0.929em;text-transform:none;background-color:#fafafa;}/*!sc*/
+.buxoPL:hover{color:#32329f;background-color:#e1e1e1;}/*!sc*/
+.buxoPL .sc-dYjPD{height:1.5em;width:1.5em;}/*!sc*/
+.buxoPL .sc-dYjPD polygon{fill:#333333;}/*!sc*/
+.cGOuox{cursor:pointer;color:#333333;margin:0;padding:12.5px 20px;display:flex;justify-content:space-between;font-family:Montserrat,sans-serif;background-color:#fafafa;}/*!sc*/
+.cGOuox:hover{color:#32329f;background-color:#ededed;}/*!sc*/
+.cGOuox .sc-dYjPD{height:1.5em;width:1.5em;}/*!sc*/
+.cGOuox .sc-dYjPD polygon{fill:#333333;}/*!sc*/
+data-styled.g104[id="sc-bitxrY"]{content:"buxoPL,cGOuox,"}/*!sc*/
+.ehBKwY{display:inline-block;vertical-align:middle;width:calc(100% - 38px);overflow:hidden;text-overflow:ellipsis;}/*!sc*/
+data-styled.g105[id="sc-eHoOIp"]{content:"ehBKwY,"}/*!sc*/
+.gtBLyN{font-size:0.8em;margin-top:10px;text-align:center;position:fixed;width:260px;bottom:0;background:#fafafa;}/*!sc*/
+.gtBLyN a,.gtBLyN a:visited,.gtBLyN a:hover{color:#333333!important;padding:5px 0;border-top:1px solid #e1e1e1;text-decoration:none;display:flex;align-items:center;justify-content:center;}/*!sc*/
+.gtBLyN img{width:15px;margin-right:5px;}/*!sc*/
+@media screen and (max-width: 50rem){.gtBLyN{width:100%;}}/*!sc*/
+data-styled.g106[id="sc-hAkAFK"]{content:"gtBLyN,"}/*!sc*/
+.bxWqzP{text-transform:lowercase;margin-left:0;line-height:1.5em;}/*!sc*/
+data-styled.g119[id="sc-dTCDEk"]{content:"bxWqzP,"}/*!sc*/
+.iSTZHA{display:block;border:0;width:100%;text-align:left;padding:10px;border-radius:2px;margin-bottom:4px;line-height:1.5em;cursor:pointer;color:#1d8127;background-color:rgba(29,129,39,0.07);}/*!sc*/
+.iSTZHA:focus{outline:auto #1d8127;}/*!sc*/
+data-styled.g121[id="sc-cbuLjy"]{content:"iSTZHA,"}/*!sc*/
+.cqDULz{vertical-align:top;}/*!sc*/
+data-styled.g124[id="sc-fXmTIC"]{content:"cqDULz,"}/*!sc*/
+.hgNHCh{font-size:1.3em;padding:0.2em 0;margin:3em 0 1.1em;color:#333333;font-weight:normal;}/*!sc*/
+data-styled.g125[id="sc-fINhYD"]{content:"hgNHCh,"}/*!sc*/
+.ktZmcf{margin-bottom:30px;}/*!sc*/
+data-styled.g130[id="sc-iFUzrA"]{content:"ktZmcf,"}/*!sc*/
+.kjuNaM{user-select:none;width:20px;height:20px;align-self:center;display:flex;flex-direction:column;color:#32329f;}/*!sc*/
+data-styled.g131[id="sc-iruNHB"]{content:"kjuNaM,"}/*!sc*/
+.cczbHe{width:260px;background-color:#fafafa;overflow:hidden;display:flex;flex-direction:column;backface-visibility:hidden;height:100vh;position:sticky;position:-webkit-sticky;top:0;}/*!sc*/
+@media screen and (max-width: 50rem){.cczbHe{position:fixed;z-index:20;width:100%;background:#fafafa;display:none;}}/*!sc*/
+@media print{.cczbHe{display:none;}}/*!sc*/
+data-styled.g132[id="sc-eVYbGh"]{content:"cczbHe,"}/*!sc*/
+.ddPveE{outline:none;user-select:none;background-color:#f2f2f2;color:#32329f;display:none;cursor:pointer;position:fixed;right:20px;z-index:100;border-radius:50%;box-shadow:0 0 20px rgba(0, 0, 0, 0.3);bottom:44px;width:60px;height:60px;padding:0 20px;}/*!sc*/
+@media screen and (max-width: 50rem){.ddPveE{display:flex;}}/*!sc*/
+.ddPveE svg{color:#0065FB;}/*!sc*/
+@media print{.ddPveE{display:none;}}/*!sc*/
+data-styled.g133[id="sc-kTmAaw"]{content:"ddPveE,"}/*!sc*/
+.jetsmW{font-family:Roboto,sans-serif;font-size:14px;font-weight:400;line-height:1.5em;color:#333333;display:flex;position:relative;text-align:left;-webkit-font-smoothing:antialiased;font-smoothing:antialiased;text-rendering:optimizeSpeed!important;tap-highlight-color:rgba(0, 0, 0, 0);text-size-adjust:100%;}/*!sc*/
+.jetsmW *{box-sizing:border-box;-webkit-tap-highlight-color:rgba(255, 255, 255, 0);}/*!sc*/
+data-styled.g134[id="sc-dwkskT"]{content:"jetsmW,"}/*!sc*/
+.ldXCvc{z-index:1;position:relative;overflow:hidden;width:calc(100% - 260px);contain:layout;}/*!sc*/
+@media print,screen and (max-width: 50rem){.ldXCvc{width:100%;}}/*!sc*/
+data-styled.g135[id="sc-jtyQFi"]{content:"ldXCvc,"}/*!sc*/
+.bjzTxL{background:#263238;position:absolute;top:0;bottom:0;right:0;width:calc((100% - 260px) * 0.4);}/*!sc*/
+@media print,screen and (max-width: 75rem){.bjzTxL{display:none;}}/*!sc*/
+data-styled.g136[id="sc-ekVkVN"]{content:"bjzTxL,"}/*!sc*/
+.uMSfb{padding:5px 0;}/*!sc*/
+data-styled.g137[id="sc-kijJqc"]{content:"uMSfb,"}/*!sc*/
+.fTcICO{width:calc(100% - 40px);box-sizing:border-box;margin:0 20px;padding:5px 10px 5px 20px;border:0;border-bottom:1px solid #e1e1e1;font-family:Roboto,sans-serif;font-weight:bold;font-size:13px;color:#333333;background-color:transparent;outline:none;}/*!sc*/
+data-styled.g138[id="sc-cLhBAz"]{content:"fTcICO,"}/*!sc*/
+.kAmnlO{position:absolute;left:20px;height:1.8em;width:0.9em;}/*!sc*/
+.kAmnlO path{fill:#333333;}/*!sc*/
+data-styled.g139[id="sc-iIvZUO"]{content:"kAmnlO,"}/*!sc*/
+</style>
+  <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
+</head>
+
+<body><div style="font:14px system-ui,-apple-system,sans-serif;padding:.6rem 1.2rem;border-bottom:1px solid #d0d7de;background:#f6f8fa"><a href="../../index.html">← 开放 API 文档</a> · <a href="../flows/api-v2.0.html">集成指南</a></div>
+  
+      <div id="redoc"><div class="sc-dwkskT jetsmW redoc-wrap"><div class="sc-eVYbGh cczbHe menu-content" style="top:0px;height:calc(100vh - 0px)"><div role="search" class="sc-kijJqc uMSfb"><svg class="sc-iIvZUO kAmnlO search-icon" version="1.1" viewBox="0 0 1000 1000" x="0px" xmlns="http://www.w3.org/2000/svg" y="0px"><path d="M968.2,849.4L667.3,549c83.9-136.5,66.7-317.4-51.7-435.6C477.1-25,252.5-25,113.9,113.4c-138.5,138.3-138.5,362.6,0,501C219.2,730.1,413.2,743,547.6,666.5l301.9,301.4c43.6,43.6,76.9,14.9,104.2-12.4C981,928.3,1011.8,893,968.2,849.4z M524.5,522c-88.9,88.7-233,88.7-321.8,0c-88.9-88.7-88.9-232.6,0-321.3c88.9-88.7,233-88.7,321.8,0C613.4,289.4,613.4,433.3,524.5,522z"></path></svg><input placeholder="Search..." aria-label="Search" type="text" class="sc-cLhBAz fTcICO search-input" value=""/></div><div class="sc-kLEbxe iOXjCz scrollbar-container undefined"><ul role="menu" class="sc-ilnrqe dqIuaF"><li tabindex="0" depth="1" data-item-id="tag/notify" role="menuitem" aria-label="支付与退款通知" aria-expanded="false" class="sc-uMZhz cQETmj"><label class="sc-bitxrY buxoPL -depth1"><span width="calc(100% - 38px)" title="支付与退款通知" class="sc-eHoOIp ehBKwY">支付与退款通知</span><svg class="sc-dYjPD kdgFPv" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></label><ul class="sc-ilnrqe gTfiRs"><li tabindex="0" depth="2" data-item-id="tag/notify/operation/onPaymentSucceeded" role="menuitem" aria-label="支付成功通知" aria-expanded="false" class="sc-uMZhz cQETmj"><label class="sc-bitxrY cGOuox -depth2"><span type="hook" class="sc-XpSrr jjsIAS operation-type hook">Event</span><span tabindex="0" width="calc(100% - 38px)" class="sc-eHoOIp ehBKwY">支付成功通知</span></label></li><li tabindex="0" depth="2" data-item-id="tag/notify/operation/onRefundResult" role="menuitem" aria-label="退款结果通知" aria-expanded="false" class="sc-uMZhz cQETmj"><label class="sc-bitxrY cGOuox -depth2"><span type="hook" class="sc-XpSrr jjsIAS operation-type hook">Event</span><span tabindex="0" width="calc(100% - 38px)" class="sc-eHoOIp ehBKwY">退款结果通知</span></label></li></ul></li></ul><div class="sc-hAkAFK gtBLyN"><a target="_blank" rel="noopener noreferrer" href="https://redocly.com/redoc/">API docs by Redocly</a></div></div></div><div class="sc-kTmAaw ddPveE"><div class="sc-iruNHB kjuNaM"><svg class="" style="transform:translate(2px, -4px) rotate(180deg);transition:transform 0.2s ease" viewBox="0 0 926.23699 573.74994" version="1.1" x="0px" y="0px" width="15" height="15"><g transform="translate(904.92214,-879.1482)"><path d="
+          m -673.67664,1221.6502 -231.2455,-231.24803 55.6165,
+          -55.627 c 30.5891,-30.59485 56.1806,-55.627 56.8701,-55.627 0.6894,
+          0 79.8637,78.60862 175.9427,174.68583 l 174.6892,174.6858 174.6892,
+          -174.6858 c 96.079,-96.07721 175.253196,-174.68583 175.942696,
+          -174.68583 0.6895,0 26.281,25.03215 56.8701,
+          55.627 l 55.6165,55.627 -231.245496,231.24803 c -127.185,127.1864
+          -231.5279,231.248 -231.873,231.248 -0.3451,0 -104.688,
+          -104.0616 -231.873,-231.248 z
+        " fill="currentColor"></path></g></svg><svg class="" style="transform:translate(2px, 4px);transition:transform 0.2s ease" viewBox="0 0 926.23699 573.74994" version="1.1" x="0px" y="0px" width="15" height="15"><g transform="translate(904.92214,-879.1482)"><path d="
+          m -673.67664,1221.6502 -231.2455,-231.24803 55.6165,
+          -55.627 c 30.5891,-30.59485 56.1806,-55.627 56.8701,-55.627 0.6894,
+          0 79.8637,78.60862 175.9427,174.68583 l 174.6892,174.6858 174.6892,
+          -174.6858 c 96.079,-96.07721 175.253196,-174.68583 175.942696,
+          -174.68583 0.6895,0 26.281,25.03215 56.8701,
+          55.627 l 55.6165,55.627 -231.245496,231.24803 c -127.185,127.1864
+          -231.5279,231.248 -231.873,231.248 -0.3451,0 -104.688,
+          -104.0616 -231.873,-231.248 z
+        " fill="currentColor"></path></g></svg></div></div><div class="sc-jtyQFi ldXCvc api-content"><div class="sc-eCQgVK jleRXN"><div class="sc-iCECmn lhRBUS"><div class="sc-hKVpXn kktglN api-info"><h1 class="sc-fuztkK sc-ctiVdb eRMVDe cBgvIi">AlphaPay Open API v2.0 Webhook<!-- --> <span>(<!-- -->2.0<!-- -->)</span></h1><p>Download OpenAPI specification<!-- -->:</p><div class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"></div><div data-role="redoc-summary" html="" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"></div><div data-role="redoc-description" html="&lt;p&gt;平台向商户发送的异步通知。商户需提供公网可访问的 &lt;code&gt;notifyUrl&lt;/code&gt;，以平台公钥验签后处理，
+并返回结构化的成功应答。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;同一通知可能多次送达&lt;/strong&gt;，商户系统须幂等处理：支付通知以 &lt;code&gt;paymentId&lt;/code&gt; 识别，退款通知以 &lt;code&gt;refundId&lt;/code&gt; 识别。
+同一订单的多笔部分退款是不同的退款单，各有不同的 &lt;code&gt;refundId&lt;/code&gt;。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;订单金额与状态以订单查询接口的结果为准，退款结果以退款查询接口的结果为准；通知用于触发查询，不作为最终依据。&lt;/strong&gt;&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"><p>平台向商户发送的异步通知。商户需提供公网可访问的 <code>notifyUrl</code>，以平台公钥验签后处理，
+并返回结构化的成功应答。</p>
+<p><strong>同一通知可能多次送达</strong>，商户系统须幂等处理：支付通知以 <code>paymentId</code> 识别，退款通知以 <code>refundId</code> 识别。
+同一订单的多笔部分退款是不同的退款单，各有不同的 <code>refundId</code>。</p>
+<p><strong>订单金额与状态以订单查询接口的结果为准，退款结果以退款查询接口的结果为准；通知用于触发查询，不作为最终依据。</strong></p>
+</div></div></div></div><div id="tag/notify" data-section-id="tag/notify" class="sc-eCQgVK jleRXN"><div class="sc-iCECmn lhRBUS"><div class="sc-hKVpXn kktglN"><h2 class="sc-qdQOe MOVBZ"><a class="sc-crPgjm jmoZom" href="#tag/notify" aria-label="tag/notify"></a>支付与退款通知</h2></div></div><div class="sc-hKVpXn kmAAAV"><div class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV redoc-markdown " html="&lt;p&gt;支付与退款通知（RSA2 签名头、结构化应答）&lt;/p&gt;
+"><p>支付与退款通知（RSA2 签名头、结构化应答）</p>
+</div></div></div><div id="tag/notify/operation/onPaymentSucceeded" data-section-id="tag/notify/operation/onPaymentSucceeded" class="sc-eCQgVK grDwca"><div data-section-id="operation/onPaymentSucceeded" id="operation/onPaymentSucceeded" class="sc-iCECmn lhRBUS"><div class="sc-hKVpXn kktglN"><h2 class="sc-qdQOe MOVBZ"><a class="sc-crPgjm jmoZom" href="#tag/notify/operation/onPaymentSucceeded" aria-label="tag/notify/operation/onPaymentSucceeded"></a>支付成功通知<!-- --> <span type="primary" class="sc-bqqMSY flrlIA"> <!-- -->Webhook </span></h2><div class="sc-iFUzrA ktZmcf"><div html="&lt;p&gt;订单支付&lt;strong&gt;成功&lt;/strong&gt;、且下单时传入 &lt;code&gt;notifyUrl&lt;/code&gt; 时推送。body 为订单查询响应中除 &lt;code&gt;result&lt;/code&gt; 以外的业务字段。
+每笔订单只在支付成功时产生一条支付成功通知；支付失败或未支付即关闭的订单不推送通知，其状态以订单查询接口为准。&lt;/p&gt;
+&lt;p&gt;本通知的内容为付款成功时的订单信息，不随该订单之后的退款变化；部分或全额退款以退款查询接口为准。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;重试&lt;/strong&gt;：商户未返回成功应答时，平台自付款成功起约 24 小时内按递增间隔重试，同一通知可能多次送达。
+商户系统应以 &lt;code&gt;paymentId&lt;/code&gt; 识别并处理重复通知，不依赖固定的推送次数或间隔；订单状态以订单查询接口为准。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"><p>订单支付<strong>成功</strong>、且下单时传入 <code>notifyUrl</code> 时推送。body 为订单查询响应中除 <code>result</code> 以外的业务字段。
+每笔订单只在支付成功时产生一条支付成功通知；支付失败或未支付即关闭的订单不推送通知，其状态以订单查询接口为准。</p>
+<p>本通知的内容为付款成功时的订单信息，不随该订单之后的退款变化；部分或全额退款以退款查询接口为准。</p>
+<p><strong>重试</strong>：商户未返回成功应答时，平台自付款成功起约 24 小时内按递增间隔重试，同一通知可能多次送达。
+商户系统应以 <code>paymentId</code> 识别并处理重复通知，不依赖固定的推送次数或间隔；订单状态以订单查询接口为准。</p>
+</div></div><div class="sc-fuYIqi kGZLat"><div class="sc-dalEhJ jdqJPb"><h5 class="sc-iqkkDd sc-jQQpTv kcvrhp kEkHzF">Authorizations:</h5><svg class="sc-dYjPD bEEWJa" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></div><div class="sc-jTPGds cVAkzL"><span class="sc-dtnsVa dVYuXz"><span class="sc-hPfayn hzxDQO"><i>platformSignatureV2</i></span></span></div></div><div><h5 class="sc-iqkkDd kcvrhp">header<!-- --> Parameters</h5><table class="sc-hHopjF bsjUmE"><tbody><tr class=""><td kind="field" title="Merchant-Code" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Merchant-Code</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="&lt;p&gt;商户号，通常为 4–6 位（参与待签内容的构造）&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>商户号，通常为 4–6 位（参与待签内容的构造）</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="Request-Time" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Request-Time</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="&lt;p&gt;通知时间，ISO-8601 带时区偏移、精确到毫秒，格式与 API 请求的 &lt;code&gt;Request-Time&lt;/code&gt; 相同。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>通知时间，ISO-8601 带时区偏移、精确到毫秒，格式与 API 请求的 <code>Request-Time</code> 相同。</p>
+</div></div></div></td></tr><tr class="last "><td kind="field" title="Nonce" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Nonce</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span> <span class="sc-gSILEF sc-cljLBy jMRTsl enoyBT"> <!-- -->= 32 characters<!-- --> </span></span></div> <div><div html="&lt;p&gt;32 位随机串（防重放）&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>32 位随机串（防重放）</p>
+</div></div></div></td></tr></tbody></table></div><h5 class="sc-iqkkDd kcvrhp">Request Body schema: <span class="sc-gXvOjn kxMqOs">application/json</span><div class="sc-gSILEF sc-eIYgEQ sc-dTCDEk jMRTsl dHYagA bxWqzP">required</div></h5><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"></div><table class="sc-hHopjF bsjUmE"><tbody><tr class=""><td class="sc-hCcPtG sc-fFCZOx sc-jgzHYo jFNAwF lcdEEX QbYuY" kind="field" title="order"><span class="sc-ieCSdj kkMuqc"></span><button aria-label="expand order"><span class="property-name">order</span><svg class="sc-dYjPD kecbEr" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></button><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">object</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="scenarioCode" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">scenarioCode</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div><div><span class="sc-gSILEF jMRTsl"> <!-- -->Enum<!-- -->:</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;APP&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;ONLINE_WAP&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;JSAPI&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;MINI_APP&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;NATIVE_QRCODE&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;NATIVE_JSAPI&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;ONLINE_QRCODE&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;ONLINE_WEB&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;OFFLINE_QRCODE&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;OFFLINE&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;CREDIT_CARD&quot;</span> </div> <div><div html="&lt;p&gt;支付场景，按订单的支付场景返回；无对应场景的订单不返回本字段。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>支付场景，按订单的支付场景返回；无对应场景的订单不返回本字段。</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="paymentRequestId" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentRequestId</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="paymentCreateTime" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentCreateTime</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="paymentExpireTime" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentExpireTime</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="paymentTime" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentTime</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="&lt;p&gt;&lt;strong&gt;付款完成时间&lt;/strong&gt;（下单时间见 &lt;code&gt;paymentCreateTime&lt;/code&gt;），即实际支付完成时刻；未支付的订单不返回本字段。
+订单查询与支付通知中的本字段取值相同。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p><strong>付款完成时间</strong>（下单时间见 <code>paymentCreateTime</code>），即实际支付完成时刻；未支付的订单不返回本字段。
+订单查询与支付通知中的本字段取值相同。</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="paymentId" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentId</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="paymentStatus" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentStatus</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div><div><span class="sc-gSILEF jMRTsl"> <!-- -->Enum<!-- -->:</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;PAYMENT_IN_PROCESS&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;CLOSED&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;FAILED&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;SUCCESS&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;PARTIAL_REFUND&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;FULL_REFUND&quot;</span> </div> <div><div html="&lt;p&gt;订单状态：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;PAYMENT_IN_PROCESS&lt;/code&gt;：等待支付。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;CLOSED&lt;/code&gt;：已关闭。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;FAILED&lt;/code&gt;：平台未受理或支付失败，订单不可再支付；如需重新收款，商户系统应以新的 &lt;code&gt;paymentRequestId&lt;/code&gt; 重新下单。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;SUCCESS&lt;/code&gt;：支付成功。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;PARTIAL_REFUND&lt;/code&gt;：支付成功，已部分退款。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;FULL_REFUND&lt;/code&gt;：支付成功，已全额退款。&lt;/li&gt;
+&lt;/ul&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>订单状态：</p>
+<ul>
+<li><code>PAYMENT_IN_PROCESS</code>：等待支付。</li>
+<li><code>CLOSED</code>：已关闭。</li>
+<li><code>FAILED</code>：平台未受理或支付失败，订单不可再支付；如需重新收款，商户系统应以新的 <code>paymentRequestId</code> 重新下单。</li>
+<li><code>SUCCESS</code>：支付成功。</li>
+<li><code>PARTIAL_REFUND</code>：支付成功，已部分退款。</li>
+<li><code>FULL_REFUND</code>：支付成功，已全额退款。</li>
+</ul>
+</div></div></div></td></tr><tr class="last "><td class="sc-hCcPtG sc-fFCZOx sc-jgzHYo jFNAwF lcdEEX QbYuY" kind="field" title="settlementAmount"><span class="sc-ieCSdj kkMuqc"></span><button aria-label="expand settlementAmount"><span class="property-name">settlementAmount</span><svg class="sc-dYjPD kecbEr" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></button><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">object</span></div> <div><div html="&lt;p&gt;该笔订单的实际结算金额，以商户结算币种计。
+&lt;strong&gt;订单已支付时始终返回&lt;/strong&gt;（&lt;code&gt;paymentStatus&lt;/code&gt; 为 &lt;code&gt;SUCCESS&lt;/code&gt; / &lt;code&gt;PARTIAL_REFUND&lt;/code&gt; / &lt;code&gt;FULL_REFUND&lt;/code&gt;）；
+未支付的订单不返回本字段。支付成功通知中始终包含本字段。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>该笔订单的实际结算金额，以商户结算币种计。
+<strong>订单已支付时始终返回</strong>（<code>paymentStatus</code> 为 <code>SUCCESS</code> / <code>PARTIAL_REFUND</code> / <code>FULL_REFUND</code>）；
+未支付的订单不返回本字段。支付成功通知中始终包含本字段。</p>
+</div></div></div></td></tr></tbody></table><div><h3 class="sc-fINhYD hgNHCh">Responses</h3><div><button class="sc-cbuLjy iSTZHA"><svg class="sc-dYjPD gngmNp" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg><strong class="sc-fXmTIC cqDULz">2XX<!-- --> </strong><div html="&lt;p&gt;商户确认已收到通知。须同时满足：HTTP 状态码为任意 2xx（不限 200），且应答体为本结构的对象，
+&lt;code&gt;result.resultCode&lt;/code&gt; 为 &lt;code&gt;SUCCESS&lt;/code&gt;、&lt;code&gt;result.resultStatus&lt;/code&gt; 为 &lt;code&gt;S&lt;/code&gt;。
+任一条件不满足或应答超时时视为未送达，平台按上述规则重试。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa sc-ciCrSJ fiNpIH dNfUH dDDioG"><p>商户确认已收到通知。须同时满足：HTTP 状态码为任意 2xx（不限 200），且应答体为本结构的对象，
+<code>result.resultCode</code> 为 <code>SUCCESS</code>、<code>result.resultStatus</code> 为 <code>S</code>。
+任一条件不满足或应答超时时视为未送达，平台按上述规则重试。</p>
+</div></button></div></div></div><div class="sc-jSppWd sc-gKkgUA fpMlmc bdQQyo"><div><h3 class="sc-kEbgWM iamDfj"> <!-- -->Request samples<!-- --> </h3><div class="sc-cxxQMU kibfTX" data-rttabs="true"><ul class="react-tabs__tab-list" role="tablist"><li class="react-tabs__tab react-tabs__tab--selected" role="tab" id="tab_R_4kmq_0" aria-selected="true" aria-disabled="false" aria-controls="panel_R_4kmq_0" tabindex="0" data-rttab="true">Payload</li></ul><div class="react-tabs__tab-panel react-tabs__tab-panel--selected" role="tabpanel" id="panel_R_4kmq_0" aria-labelledby="tab_R_4kmq_0"><div><div class="sc-cNSlRw bMFMGt"><span class="sc-bBzIOb BuCyN">Content type</span><div class="sc-dPqFhK kgKexQ">application/json</div></div><div class="sc-hUheUT jUCYlq"><div class="sc-cTZdpT hHzuQA"><div class="sc-giQkEn dzKJV"><button><div class="sc-jcgtOs feYhXE">Copy</div></button><button> Expand all </button><button> Collapse all </button></div><div tabindex="0" class="sc-iJSMbW fiNpIH sc-jNDflC jgTAJz"><div class="redoc-json"><code><button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable "><span class="property token string">"order"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"orderAmount"</span>: <button class="collapser" aria-label="expand"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"value"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"currency"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"description"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"notifyUrl"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"redirectUrl"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"scenarioCode"</span>: <span class="token string">&quot;APP&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentRequestId"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentCreateTime"</span>: <span class="token string">&quot;2019-08-24T14:15:22Z&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentExpireTime"</span>: <span class="token string">&quot;2019-08-24T14:15:22Z&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentTime"</span>: <span class="token string">&quot;2019-08-24T14:15:22Z&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentId"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentStatus"</span>: <span class="token string">&quot;PAYMENT_IN_PROCESS&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"settlementAmount"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"value"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"currency"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span></div></li></ul><span class="token punctuation">}</span></code></div></div></div></div></div></div></div></div><div><h3 class="sc-kEbgWM iamDfj"> <!-- -->Response samples<!-- --> </h3><div class="sc-cxxQMU kibfTX" data-rttabs="true"><ul class="react-tabs__tab-list" role="tablist"><li class="tab-success react-tabs__tab--selected" role="tab" id="tab_R_4smq_0" aria-selected="true" aria-disabled="false" aria-controls="panel_R_4smq_0" tabindex="0" data-rttab="true">2XX</li></ul><div class="react-tabs__tab-panel react-tabs__tab-panel--selected" role="tabpanel" id="panel_R_4smq_0" aria-labelledby="tab_R_4smq_0"><div><div class="sc-cNSlRw bMFMGt"><span class="sc-bBzIOb BuCyN">Content type</span><div class="sc-dPqFhK kgKexQ">application/json</div></div><div class="sc-hUheUT jUCYlq"><div class="sc-cTZdpT hHzuQA"><div class="sc-giQkEn dzKJV"><button><div class="sc-jcgtOs feYhXE">Copy</div></button><button> Expand all </button><button> Collapse all </button></div><div tabindex="0" class="sc-iJSMbW fiNpIH sc-jNDflC jgTAJz"><div class="redoc-json"><code><button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable "><span class="property token string">"result"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"resultCode"</span>: <span class="token string">&quot;SUCCESS&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"resultStatus"</span>: <span class="token string">&quot;S&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"resultMessage"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span></div></li></ul><span class="token punctuation">}</span></code></div></div></div></div></div></div></div></div></div></div></div><div id="tag/notify/operation/onRefundResult" data-section-id="tag/notify/operation/onRefundResult" class="sc-eCQgVK grDwca"><div data-section-id="operation/onRefundResult" id="operation/onRefundResult" class="sc-iCECmn lhRBUS"><div class="sc-hKVpXn kktglN"><h2 class="sc-qdQOe MOVBZ"><a class="sc-crPgjm jmoZom" href="#tag/notify/operation/onRefundResult" aria-label="tag/notify/operation/onRefundResult"></a>退款结果通知<!-- --> <span type="primary" class="sc-bqqMSY flrlIA"> <!-- -->Webhook </span></h2><div class="sc-iFUzrA ktZmcf"><div html="&lt;p&gt;退款被支付渠道受理、且发起退款时传入 &lt;code&gt;notifyUrl&lt;/code&gt; 时推送，该笔退款自此计入商户账务与结算。
+body 为退款查询响应中除 &lt;code&gt;result&lt;/code&gt; 以外的业务字段。推送地址为发起退款时传入的 &lt;code&gt;notifyUrl&lt;/code&gt;，不沿用下单时传入的地址。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;每笔退款推送一条通知&lt;/strong&gt;：同一订单的多笔部分退款各推送一条，商户系统应以 &lt;code&gt;refundId&lt;/code&gt;（而非 &lt;code&gt;paymentId&lt;/code&gt;）识别并处理重复通知。
+本通知的 &lt;code&gt;refundStatus&lt;/code&gt; 始终为 &lt;code&gt;SUCCESS&lt;/code&gt;，表示退款已被支付渠道受理，不表示款项已退回付款人（见 &lt;code&gt;refundStatus&lt;/code&gt; 字段说明）。
+未被受理即失败、审核未通过的退款不推送；受理后退款失败的，平台不再就此推送通知。退款最终结果以退款查询接口为准。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;重试&lt;/strong&gt;：与支付通知相同，平台自退款被受理起约 24 小时内按递增间隔重试，同一通知可能多次送达。
+商户系统不应依赖固定的推送次数或间隔。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"><p>退款被支付渠道受理、且发起退款时传入 <code>notifyUrl</code> 时推送，该笔退款自此计入商户账务与结算。
+body 为退款查询响应中除 <code>result</code> 以外的业务字段。推送地址为发起退款时传入的 <code>notifyUrl</code>，不沿用下单时传入的地址。</p>
+<p><strong>每笔退款推送一条通知</strong>：同一订单的多笔部分退款各推送一条，商户系统应以 <code>refundId</code>（而非 <code>paymentId</code>）识别并处理重复通知。
+本通知的 <code>refundStatus</code> 始终为 <code>SUCCESS</code>，表示退款已被支付渠道受理，不表示款项已退回付款人（见 <code>refundStatus</code> 字段说明）。
+未被受理即失败、审核未通过的退款不推送；受理后退款失败的，平台不再就此推送通知。退款最终结果以退款查询接口为准。</p>
+<p><strong>重试</strong>：与支付通知相同，平台自退款被受理起约 24 小时内按递增间隔重试，同一通知可能多次送达。
+商户系统不应依赖固定的推送次数或间隔。</p>
+</div></div><div class="sc-fuYIqi kGZLat"><div class="sc-dalEhJ jdqJPb"><h5 class="sc-iqkkDd sc-jQQpTv kcvrhp kEkHzF">Authorizations:</h5><svg class="sc-dYjPD bEEWJa" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></div><div class="sc-jTPGds cVAkzL"><span class="sc-dtnsVa dVYuXz"><span class="sc-hPfayn hzxDQO"><i>platformSignatureV2</i></span></span></div></div><div><h5 class="sc-iqkkDd kcvrhp">header<!-- --> Parameters</h5><table class="sc-hHopjF bsjUmE"><tbody><tr class=""><td kind="field" title="Merchant-Code" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Merchant-Code</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="&lt;p&gt;商户号，通常为 4–6 位（参与待签内容的构造）&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>商户号，通常为 4–6 位（参与待签内容的构造）</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="Request-Time" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Request-Time</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="&lt;p&gt;通知时间，ISO-8601 带时区偏移、精确到毫秒，格式与 API 请求的 &lt;code&gt;Request-Time&lt;/code&gt; 相同。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>通知时间，ISO-8601 带时区偏移、精确到毫秒，格式与 API 请求的 <code>Request-Time</code> 相同。</p>
+</div></div></div></td></tr><tr class="last "><td kind="field" title="Nonce" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">Nonce</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span> <span class="sc-gSILEF sc-cljLBy jMRTsl enoyBT"> <!-- -->= 32 characters<!-- --> </span></span></div> <div><div html="&lt;p&gt;32 位随机串（防重放）&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>32 位随机串（防重放）</p>
+</div></div></div></td></tr></tbody></table></div><h5 class="sc-iqkkDd kcvrhp">Request Body schema: <span class="sc-gXvOjn kxMqOs">application/json</span><div class="sc-gSILEF sc-eIYgEQ sc-dTCDEk jMRTsl dHYagA bxWqzP">required</div></h5><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH ewCFMV"></div><table class="sc-hHopjF bsjUmE"><tbody><tr class=""><td class="sc-hCcPtG sc-fFCZOx sc-jgzHYo jFNAwF lcdEEX QbYuY" kind="field" title="refund"><span class="sc-ieCSdj kkMuqc"></span><button aria-label="expand refund"><span class="property-name">refund</span><svg class="sc-dYjPD kecbEr" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></button><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">object</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="paymentId" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">paymentId</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr><tr class=""><td kind="field" title="refundRequestId" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">refundRequestId</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="&lt;p&gt;商户退款单号。通过本 API 发起的退款在查询与通知中本字段始终有值。
+未通过本 API 发起的退款（如在商户后台操作、平台撤单或系统自动退款）本字段为空。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>商户退款单号。通过本 API 发起的退款在查询与通知中本字段始终有值。
+未通过本 API 发起的退款（如在商户后台操作、平台撤单或系统自动退款）本字段为空。</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="refundId" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">refundId</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div> <div><div html="&lt;p&gt;平台退款号&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>平台退款号</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="refundTime" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">refundTime</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ"> <!-- -->&lt;<!-- -->date-time<!-- -->&gt;<!-- --> </span></div> <div><div html="&lt;p&gt;&lt;strong&gt;退款发起时间&lt;/strong&gt;，即退款单创建时间，不是款项到账时间。退款查询与退款通知中的本字段取值相同。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p><strong>退款发起时间</strong>，即退款单创建时间，不是款项到账时间。退款查询与退款通知中的本字段取值相同。</p>
+</div></div></div></td></tr><tr class=""><td kind="field" title="refundStatus" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">refundStatus</span><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">string</span></div><div><span class="sc-gSILEF jMRTsl"> <!-- -->Enum<!-- -->:</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;REFUND_IN_PROCESS&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;SUCCESS&quot;</span> <span class="sc-gSILEF sc-lbFCLI jMRTsl OXDYs">&quot;FAILED&quot;</span> </div> <div><div html="&lt;p&gt;退款状态：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;REFUND_IN_PROCESS&lt;/code&gt;：退款已创建，尚未被支付渠道受理。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;SUCCESS&lt;/code&gt;：退款已被支付渠道受理，自此计入商户账务与结算；不表示款项已退回付款人。&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;FAILED&lt;/code&gt;：退款失败。&lt;/li&gt;
+&lt;/ul&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>退款状态：</p>
+<ul>
+<li><code>REFUND_IN_PROCESS</code>：退款已创建，尚未被支付渠道受理。</li>
+<li><code>SUCCESS</code>：退款已被支付渠道受理，自此计入商户账务与结算；不表示款项已退回付款人。</li>
+<li><code>FAILED</code>：退款失败。</li>
+</ul>
+</div></div></div></td></tr><tr class=""><td class="sc-hCcPtG sc-fFCZOx sc-jgzHYo jFNAwF lcdEEX QbYuY" kind="field" title="settlementAmount"><span class="sc-ieCSdj kkMuqc"></span><button aria-label="expand settlementAmount"><span class="property-name">settlementAmount</span><svg class="sc-dYjPD kecbEr" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg></button><div class="sc-gSILEF sc-eIYgEQ jMRTsl dHYagA">required</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">object</span></div> <div><div html="&lt;p&gt;本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
+取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
+&lt;strong&gt;退款被支付渠道受理后始终返回&lt;/strong&gt;，之后退款失败时仍保留该值；
+尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"><p>本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
+取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
+<strong>退款被支付渠道受理后始终返回</strong>，之后退款失败时仍保留该值；
+尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。</p>
+</div></div></div></td></tr><tr class="last "><td kind="additionalProperties" title="property name*" class="sc-hCcPtG sc-fFCZOx jFNAwF lcdEEX"><span class="sc-ieCSdj kkMuqc"></span><span class="property-name">property name*</span><div class="sc-gSILEF sc-eIYgEQ sc-otWXT jMRTsl dHYagA ctiotw">additional property</div></td><td class="sc-bjLslk gLpZiQ"><div><div><span class="sc-gSILEF sc-lbpDNm jMRTsl NncTE"></span><span class="sc-gSILEF sc-iNyHtD jMRTsl kUjPnZ">any</span></div> <div><div html="" class="sc-iJSMbW sc-cBEgGa fiNpIH bAoMjv"></div></div></div></td></tr></tbody></table><div><h3 class="sc-fINhYD hgNHCh">Responses</h3><div><button class="sc-cbuLjy iSTZHA"><svg class="sc-dYjPD gngmNp" version="1.1" viewBox="0 0 24 24" x="0" xmlns="http://www.w3.org/2000/svg" y="0" aria-hidden="true"><polygon points="17.3 8.3 12 13.6 6.7 8.3 5.3 9.7 12 16.4 18.7 9.7 "></polygon></svg><strong class="sc-fXmTIC cqDULz">2XX<!-- --> </strong><div html="&lt;p&gt;商户确认已收到通知。应答要求与支付通知相同：HTTP 状态码为任意 2xx，且应答体符合本结构。
+任一条件不满足或应答超时时视为未送达，平台按上述规则重试。&lt;/p&gt;
+" class="sc-iJSMbW sc-cBEgGa sc-ciCrSJ fiNpIH dNfUH dDDioG"><p>商户确认已收到通知。应答要求与支付通知相同：HTTP 状态码为任意 2xx，且应答体符合本结构。
+任一条件不满足或应答超时时视为未送达，平台按上述规则重试。</p>
+</div></button></div></div></div><div class="sc-jSppWd sc-gKkgUA fpMlmc bdQQyo"><div><h3 class="sc-kEbgWM iamDfj"> <!-- -->Request samples<!-- --> </h3><div class="sc-cxxQMU kibfTX" data-rttabs="true"><ul class="react-tabs__tab-list" role="tablist"><li class="react-tabs__tab react-tabs__tab--selected" role="tab" id="tab_R_4kqq_0" aria-selected="true" aria-disabled="false" aria-controls="panel_R_4kqq_0" tabindex="0" data-rttab="true">Payload</li></ul><div class="react-tabs__tab-panel react-tabs__tab-panel--selected" role="tabpanel" id="panel_R_4kqq_0" aria-labelledby="tab_R_4kqq_0"><div><div class="sc-cNSlRw bMFMGt"><span class="sc-bBzIOb BuCyN">Content type</span><div class="sc-dPqFhK kgKexQ">application/json</div></div><div class="sc-hUheUT jUCYlq"><div class="sc-cTZdpT hHzuQA"><div class="sc-giQkEn dzKJV"><button><div class="sc-jcgtOs feYhXE">Copy</div></button><button> Expand all </button><button> Collapse all </button></div><div tabindex="0" class="sc-iJSMbW fiNpIH sc-jNDflC jgTAJz"><div class="redoc-json"><code><button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable "><span class="property token string">"refund"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"refundAmount"</span>: <button class="collapser" aria-label="expand"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"value"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"currency"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"description"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"notifyUrl"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"paymentId"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"refundRequestId"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"refundId"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"refundTime"</span>: <span class="token string">&quot;2019-08-24T14:15:22Z&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"refundStatus"</span>: <span class="token string">&quot;REFUND_IN_PROCESS&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable "><span class="property token string">"settlementAmount"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"value"</span>: <span class="token string">&quot;string&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"currency"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span></div></li></ul><span class="token punctuation">}</span></code></div></div></div></div></div></div></div></div><div><h3 class="sc-kEbgWM iamDfj"> <!-- -->Response samples<!-- --> </h3><div class="sc-cxxQMU kibfTX" data-rttabs="true"><ul class="react-tabs__tab-list" role="tablist"><li class="tab-success react-tabs__tab--selected" role="tab" id="tab_R_4sqq_0" aria-selected="true" aria-disabled="false" aria-controls="panel_R_4sqq_0" tabindex="0" data-rttab="true">2XX</li></ul><div class="react-tabs__tab-panel react-tabs__tab-panel--selected" role="tabpanel" id="panel_R_4sqq_0" aria-labelledby="tab_R_4sqq_0"><div><div class="sc-cNSlRw bMFMGt"><span class="sc-bBzIOb BuCyN">Content type</span><div class="sc-dPqFhK kgKexQ">application/json</div></div><div class="sc-hUheUT jUCYlq"><div class="sc-cTZdpT hHzuQA"><div class="sc-giQkEn dzKJV"><button><div class="sc-jcgtOs feYhXE">Copy</div></button><button> Expand all </button><button> Collapse all </button></div><div tabindex="0" class="sc-iJSMbW fiNpIH sc-jNDflC jgTAJz"><div class="redoc-json"><code><button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable "><span class="property token string">"result"</span>: <button class="collapser" aria-label="collapse"></button><span class="token punctuation">{</span><span class="ellipsis"></span><ul class="obj collapsible"><li><div class="hoverable collapsed"><span class="property token string">"resultCode"</span>: <span class="token string">&quot;SUCCESS&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"resultStatus"</span>: <span class="token string">&quot;S&quot;</span><span class="token punctuation">,</span></div></li><li><div class="hoverable collapsed"><span class="property token string">"resultMessage"</span>: <span class="token string">&quot;string&quot;</span></div></li></ul><span class="token punctuation">}</span></div></li></ul><span class="token punctuation">}</span></code></div></div></div></div></div></div></div></div></div></div></div></div><div class="sc-ekVkVN bjzTxL"></div></div></div>
+      <script>
+      const __redoc_state = {"menu":{"activeItemIdx":-1},"spec":{"data":{"openapi":"3.1.0","info":{"title":"AlphaPay Open API v2.0 Webhook","version":"2.0","description":"平台向商户发送的异步通知。商户需提供公网可访问的 `notifyUrl`，以平台公钥验签后处理，\n并返回结构化的成功应答。\n\n**同一通知可能多次送达**，商户系统须幂等处理：支付通知以 `paymentId` 识别，退款通知以 `refundId` 识别。\n同一订单的多笔部分退款是不同的退款单，各有不同的 `refundId`。\n\n**订单金额与状态以订单查询接口的结果为准，退款结果以退款查询接口的结果为准；通知用于触发查询，不作为最终依据。**\n"},"servers":[{"url":"{notifyUrl}","description":"商户系统接收通知的地址，取值为商户在下单或退款请求中传入的 `notifyUrl`。\n该地址随请求传入；请求未传 `notifyUrl` 时，平台不推送该笔订单或退款的通知；\n`notifyUrl` 为非公网可达的地址时同样不推送。\n","variables":{"notifyUrl":{"default":"https://merchant.example.com/alphapay/webhook","description":"商户自有的公网可达回调地址"}}}],"tags":[{"name":"notify","x-displayName":"支付与退款通知","description":"支付与退款通知（RSA2 签名头、结构化应答）"}],"webhooks":{"paymentSucceeded":{"post":{"tags":["notify"],"operationId":"onPaymentSucceeded","summary":"支付成功通知","description":"订单支付**成功**、且下单时传入 `notifyUrl` 时推送。body 为订单查询响应中除 `result` 以外的业务字段。\n每笔订单只在支付成功时产生一条支付成功通知；支付失败或未支付即关闭的订单不推送通知，其状态以订单查询接口为准。\n\n本通知的内容为付款成功时的订单信息，不随该订单之后的退款变化；部分或全额退款以退款查询接口为准。\n\n**重试**：商户未返回成功应答时，平台自付款成功起约 24 小时内按递增间隔重试，同一通知可能多次送达。\n商户系统应以 `paymentId` 识别并处理重复通知，不依赖固定的推送次数或间隔；订单状态以订单查询接口为准。\n","security":[{"platformSignatureV2":[]}],"parameters":[{"$ref":"#/components/parameters/MerchantCodeHeader"},{"$ref":"#/components/parameters/RequestTimeHeader"},{"$ref":"#/components/parameters/NonceHeader"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"description":"订单查询响应的业务字段，不含 `result`。\n本通知在付款成功时推送，下列字段始终返回。\n","required":["paymentStatus","paymentRequestId","paymentId","order","paymentCreateTime","paymentExpireTime","paymentTime","scenarioCode","settlementAmount"],"properties":{"order":{"required":["notifyUrl"]}},"allOf":[{"$ref":"#/components/schemas/InquiryPaymentBody"},{"not":{"required":["result"]}}]}}}},"responses":{"2XX":{"description":"商户确认已收到通知。须同时满足：HTTP 状态码为任意 2xx（不限 200），且应答体为本结构的对象，\n`result.resultCode` 为 `SUCCESS`、`result.resultStatus` 为 `S`。\n任一条件不满足或应答超时时视为未送达，平台按上述规则重试。\n","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ack"}}}}}}},"refundResult":{"post":{"tags":["notify"],"operationId":"onRefundResult","summary":"退款结果通知","description":"退款被支付渠道受理、且发起退款时传入 `notifyUrl` 时推送，该笔退款自此计入商户账务与结算。\nbody 为退款查询响应中除 `result` 以外的业务字段。推送地址为发起退款时传入的 `notifyUrl`，不沿用下单时传入的地址。\n\n**每笔退款推送一条通知**：同一订单的多笔部分退款各推送一条，商户系统应以 `refundId`（而非 `paymentId`）识别并处理重复通知。\n本通知的 `refundStatus` 始终为 `SUCCESS`，表示退款已被支付渠道受理，不表示款项已退回付款人（见 `refundStatus` 字段说明）。\n未被受理即失败、审核未通过的退款不推送；受理后退款失败的，平台不再就此推送通知。退款最终结果以退款查询接口为准。\n\n**重试**：与支付通知相同，平台自退款被受理起约 24 小时内按递增间隔重试，同一通知可能多次送达。\n商户系统不应依赖固定的推送次数或间隔。\n","security":[{"platformSignatureV2":[]}],"parameters":[{"$ref":"#/components/parameters/MerchantCodeHeader"},{"$ref":"#/components/parameters/RequestTimeHeader"},{"$ref":"#/components/parameters/NonceHeader"}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"description":"退款查询响应的业务字段，不含 `result`。\n本通知在退款被支付渠道受理时推送，下列字段始终返回。\n","required":["refundId","refundRequestId","paymentId","refund","refundStatus","refundTime","settlementAmount"],"properties":{"refund":{"required":["refundAmount","notifyUrl"]}},"allOf":[{"$ref":"#/components/schemas/InquiryRefundBody"},{"not":{"required":["result"]}}]}}}},"responses":{"2XX":{"description":"商户确认已收到通知。应答要求与支付通知相同：HTTP 状态码为任意 2xx，且应答体符合本结构。\n任一条件不满足或应答超时时视为未送达，平台按上述规则重试。\n","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Ack"}}}}}}}},"components":{"securitySchemes":{"platformSignatureV2":{"type":"apiKey","in":"header","name":"Signature","description":"平台以平台私钥对推送给商户的通知签名，商户以平台公钥验签。\n\n- 格式：`algorithm=RS256, keyVersion=<版本号>, signature=<urlEncode(base64(sign))>`\n  （三段以 `, ` 分隔，每段为 `键=值`；签名段先做 Base64 编码，再做 URL 编码）。\n- 算法：RSA2（`SHA256withRSA`），与 API 响应签名使用相同的算法与平台密钥。\n  `keyVersion` 为签名所用的平台密钥版本；商户按 `keyVersion` 取对应的**平台公钥**验签，验签通过后再处理通知。\n- 待签内容：`POST {URI}\\n{Merchant-Code}.{Request-Time}.{Nonce}.{Body}`，包含 body。\n- `{URI}` 只取 `notifyUrl` 的路径，不含域名与查询串；`notifyUrl` 不含路径时为 `/`。\n- 通知地址返回 HTTP 307 或 308 时，平台以原报文与原签名头向 `Location` 地址重发，`{URI}` 仍为 `notifyUrl` 的路径；\n  返回其他重定向状态码时视为未送达。\n- `Merchant-Code`、`Request-Time`、`Nonce` 三个请求头参与待签内容的构造，见各通知的请求头参数。\n  通知使用 `Request-Time` 构造待签内容。\n"}},"parameters":{"MerchantCodeHeader":{"name":"Merchant-Code","in":"header","required":true,"description":"商户号，通常为 4–6 位（参与待签内容的构造）","schema":{"type":"string"}},"RequestTimeHeader":{"name":"Request-Time","in":"header","required":true,"description":"通知时间，ISO-8601 带时区偏移、精确到毫秒，格式与 API 请求的 `Request-Time` 相同。\n","schema":{"type":"string","format":"date-time"}},"NonceHeader":{"name":"Nonce","in":"header","required":true,"description":"32 位随机串（防重放）","schema":{"type":"string","minLength":32,"maxLength":32}}},"schemas":{"Ack":{"type":"object","description":"成功应答为 JSON 对象，`result.resultCode` 为 `SUCCESS` 且 `result.resultStatus` 为 `S`。\n其他应答（含 HTTP 2xx 但结构不符）视为未送达，平台按各通知的重试规则重试。\n应答无需签名。\n","required":["result"],"properties":{"result":{"type":"object","required":["resultCode","resultStatus"],"properties":{"resultCode":{"type":"string","const":"SUCCESS"},"resultStatus":{"type":"string","const":"S"},"resultMessage":{"type":"string","description":"可选"}}}}},"AmountValue":{"type":"string","pattern":"^\\d+$","description":"金额，以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。\n"},"CurrencyCode":{"type":"string","pattern":"^[A-Z]{3}$","description":"币种代码（ISO 4217 三位字母码）。银行卡类场景（`CREDIT_CARD` 与 Apple Pay）为商户结算币种，\n其他场景为标价币种。取值以商户开通情况为准。\n"},"AmountResp":{"type":"object","properties":{"value":{"$ref":"#/components/schemas/AmountValue"},"currency":{"$ref":"#/components/schemas/CurrencyCode"}}},"SettlementCurrency":{"type":"string","pattern":"^[A-Z]{3}$","description":"**结算币种**（ISO 4217 三位字母码），即商户入账与结算所用币种；每个商户有且只有一个结算币种，入驻时确定。\n"},"SettlementAmountResp":{"type":"object","description":"结算金额，以商户结算币种计；本对象出现时金额与币种均返回。","required":["value","currency"],"properties":{"value":{"$ref":"#/components/schemas/AmountValue"},"currency":{"$ref":"#/components/schemas/SettlementCurrency"}}},"InquiryPaymentBody":{"description":"订单查询的业务字段（不含 `result`）。支付成功通知的 body 使用相同结构。","type":"object","properties":{"scenarioCode":{"type":"string","enum":["APP","ONLINE_WAP","JSAPI","MINI_APP","NATIVE_QRCODE","NATIVE_JSAPI","ONLINE_QRCODE","ONLINE_WEB","OFFLINE_QRCODE","OFFLINE","CREDIT_CARD"],"description":"支付场景，按订单的支付场景返回；无对应场景的订单不返回本字段。"},"paymentRequestId":{"type":"string"},"order":{"type":"object","required":["orderAmount"],"properties":{"orderAmount":{"$ref":"#/components/schemas/AmountResp"},"description":{"type":"string","maxLength":128},"notifyUrl":{"type":"string"},"redirectUrl":{"type":"string"}}},"paymentCreateTime":{"type":"string","format":"date-time"},"paymentExpireTime":{"type":"string","format":"date-time"},"paymentTime":{"type":"string","format":"date-time","description":"**付款完成时间**（下单时间见 `paymentCreateTime`），即实际支付完成时刻；未支付的订单不返回本字段。\n订单查询与支付通知中的本字段取值相同。\n"},"paymentId":{"type":"string"},"paymentStatus":{"type":"string","description":"订单状态：\n\n- `PAYMENT_IN_PROCESS`：等待支付。\n- `CLOSED`：已关闭。\n- `FAILED`：平台未受理或支付失败，订单不可再支付；如需重新收款，商户系统应以新的 `paymentRequestId` 重新下单。\n- `SUCCESS`：支付成功。\n- `PARTIAL_REFUND`：支付成功，已部分退款。\n- `FULL_REFUND`：支付成功，已全额退款。\n","enum":["PAYMENT_IN_PROCESS","CLOSED","FAILED","SUCCESS","PARTIAL_REFUND","FULL_REFUND"]},"settlementAmount":{"allOf":[{"$ref":"#/components/schemas/SettlementAmountResp"}],"description":"该笔订单的实际结算金额，以商户结算币种计。\n**订单已支付时始终返回**（`paymentStatus` 为 `SUCCESS` / `PARTIAL_REFUND` / `FULL_REFUND`）；\n未支付的订单不返回本字段。支付成功通知中始终包含本字段。\n"}}},"RefundAmountResp":{"type":"object","properties":{"value":{"$ref":"#/components/schemas/AmountValue"},"currency":{"$ref":"#/components/schemas/CurrencyCode"}},"required":["value","currency"]},"InquiryRefundBody":{"description":"退款查询的业务字段（不含 `result`）。退款通知的 body 使用相同结构。","type":"object","additionalProperties":true,"properties":{"paymentId":{"type":"string"},"refundRequestId":{"type":"string","description":"商户退款单号。通过本 API 发起的退款在查询与通知中本字段始终有值。\n未通过本 API 发起的退款（如在商户后台操作、平台撤单或系统自动退款）本字段为空。\n"},"refundId":{"type":"string","description":"平台退款号"},"refundTime":{"type":"string","format":"date-time","description":"**退款发起时间**，即退款单创建时间，不是款项到账时间。退款查询与退款通知中的本字段取值相同。\n"},"refundStatus":{"type":"string","description":"退款状态：\n\n- `REFUND_IN_PROCESS`：退款已创建，尚未被支付渠道受理。\n- `SUCCESS`：退款已被支付渠道受理，自此计入商户账务与结算；不表示款项已退回付款人。\n- `FAILED`：退款失败。\n","enum":["REFUND_IN_PROCESS","SUCCESS","FAILED"]},"refund":{"type":"object","properties":{"refundAmount":{"$ref":"#/components/schemas/RefundAmountResp"},"description":{"type":"string"},"notifyUrl":{"type":"string"}}},"settlementAmount":{"allOf":[{"$ref":"#/components/schemas/SettlementAmountResp"}],"description":"本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，\n取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。\n**退款被支付渠道受理后始终返回**，之后退款失败时仍保留该值；\n尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。\n"}}}}}}},"searchIndex":{"store":["tag/notify","tag/notify/operation/onPaymentSucceeded","tag/notify/operation/onRefundResult"],"index":{"version":"2.3.9","fields":["title","description"],"fieldVectors":[["title/0",[0,0.325]],["description/0",[0,0.499,1,1.504]],["title/1",[0,0.325]],["description/1",[0,0.625,2,0.447,3,0.447,4,0.447,5,0.447,6,0.447,7,0.933]],["title/2",[0,0.325]],["description/2",[0,0.62,2,0.537,3,0.362,4,0.362,5,0.362,6,0.362,8,0.756,9,1.12,10,0.756,11,0.756]]],"invertedIndex":[["",{"_index":0,"title":{"0":{},"1":{},"2":{}},"description":{"0":{},"1":{},"2":{}}}],["24",{"_index":5,"title":{},"description":{"1":{},"2":{}}}],["bodi",{"_index":3,"title":{},"description":{"1":{},"2":{}}}],["notifyurl",{"_index":2,"title":{},"description":{"1":{},"2":{}}}],["paymentid",{"_index":6,"title":{},"description":{"1":{},"2":{}}}],["paymentsucceed",{"_index":7,"title":{},"description":{"1":{}}}],["refundid",{"_index":8,"title":{},"description":{"2":{}}}],["refundresult",{"_index":11,"title":{},"description":{"2":{}}}],["refundstatu",{"_index":9,"title":{},"description":{"2":{}}}],["result",{"_index":4,"title":{},"description":{"1":{},"2":{}}}],["rsa2",{"_index":1,"title":{},"description":{"0":{}}}],["success",{"_index":10,"title":{},"description":{"2":{}}}]],"pipeline":[]}},"options":{}};
+
+      var container = document.getElementById('redoc');
+      Redoc.hydrate(__redoc_state, container);
+
+      </script>
+</body>
+
+</html>

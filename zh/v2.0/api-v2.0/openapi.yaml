@@ -1,0 +1,1718 @@
+openapi: 3.1.0
+info:
+  title: AlphaPay Open API v2.0
+  version: '2.0'
+  description: |
+    面向外部商户的 RSA2（SHA256withRSA）开放支付 API。
+    统一 base path `/api/v2.0`；请求 / 响应体均为 `application/json`。
+    所有端点均为 `POST`。
+
+    请求须带 `Content-Type: application/json; charset=UTF-8` 与 `Accept: application/json` 两个头。
+    请求与响应均使用 RSA2 签名：平台以商户公钥验证请求签名，并以平台私钥对响应签名，详见安全方案 `gatewaySignV2`。
+servers:
+  - url: https://{host}/api/v2.0
+    variables:
+      host:
+        default: api.example.com
+        description: 接入域名由平台提供，两代共用
+security:
+  - gatewaySignV2: []
+tags:
+  - name: payment
+    x-displayName: 统一下单
+    description: 统一下单，按 `scenarioCode` 区分支付场景。
+  - name: applepay
+    x-displayName: Apple Pay
+    description: Apple Pay 两步支付：预下单与扣款。
+  - name: order
+    x-displayName: 订单查询
+    description: 查询订单与退款的状态和明细。
+  - name: refund
+    x-displayName: 退款
+    description: 对已支付订单按金额退款。
+  - name: cancel
+    x-displayName: 关单
+    description: 关闭未支付订单。
+  - name: transaction
+    x-displayName: 交易流水
+    description: 按日分页查询交易流水。
+  - name: settlement
+    x-displayName: 结算记录
+    description: 按结算日查询结算记录。
+paths:
+  /payments/pay:
+    post:
+      tags:
+        - payment
+      operationId: createPayment
+      summary: 统一下单（按 scenarioCode 受理 11 种支付场景）
+      description: |
+        创建支付订单并返回支付凭据 `paymentInfo`（按场景返回支付页地址、二维码或 SDK 参数）。
+        同一 `Merchant-Code` 下以 `paymentRequestId` 作为幂等键：以同一 `paymentRequestId` 重复下单不会新建订单，
+        返回该订单的当前结果，请求内容与首次不同时同样如此——订单已支付时 `resultCode` 为 `ORDER_PAID`，
+        等待支付时 `resultStatus` 为 `U`、`resultCode` 为 `PAYMENT_IN_PROCESS`。
+        各 `scenarioCode` 的必填字段见请求体结构中按场景列出的条件。
+
+        受理成功且尚未得出支付结果时，`result.resultStatus` 为 `U`、`resultCode` 为 `PAYMENT_IN_PROCESS`；
+        已同步得出支付结果时为 `S` 或 `F`。
+        支付结果以订单查询接口的结果为准，支付通知用于触发查询。
+        业务失败时返回 HTTP 200，`result.resultStatus` 为 `F`，`resultCode` 取值见 `Result`。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '200':
+          description: 受理结果（成功或业务失败，判 result.resultStatus）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOrderResponse'
+  /payments/refund:
+    post:
+      tags:
+        - refund
+      operationId: createRefund
+      summary: 按金额发起退款
+      description: |
+        对已支付订单按金额退款；单笔订单可分多次退款，**退款总额不得超过实际支付金额**。
+        退款币种与原订单相同，请求金额不含 `currency` 字段。
+        主商户开通相应权限后，可为其子商户的订单发起退款；同一主商户下开通互退的子商户之间可互相发起退款。
+
+        `refundRequestId` 为商户退款单号（必填），在订单所属商户范围内作为幂等键：
+        `refundRequestId` 相同的重复提交返回首次受理的结果，不重复退款；
+        `refundRequestId` 已用于其他订单，或与首次提交的金额不一致，返回 `REFUND_MISMATCH`。
+        退款失败后以新的 `refundRequestId` 重新发起。
+
+        受理成功时 `resultStatus` 为 `S`、`resultCode` 为 `SUCCESS`，并返回平台退款单号 `refundId`；
+        退款最终结果以退款查询接口的结果为准，退款通知用于触发查询。
+        退款进入平台审核时 `resultCode` 为 `REFUND_NEED_REVIEW`、`resultStatus` 为 `U`，响应含 `refundId`；
+        审核结果以退款查询为准；请求传入 `notifyUrl` 时，审核通过且退款被渠道受理后推送退款通知。
+        处理结果未知时（如平台内部错误）`resultStatus` 为 `U`，以退款查询确认。
+
+        退款被拒时 `resultStatus` 为 `F`，常见结果码：
+
+        - `ORDER_NOT_EXIST`：订单不存在，或不在本商户可发起退款的范围内。
+        - `ORDER_NOT_PAID`：订单尚未支付。
+        - `ORDER_CLOSED`：订单已关闭或支付失败。
+        - `INVALID_REFUND_AMOUNT`：退款金额超出该订单当前可退金额。
+        - `FULL_REFUND_COMPLETED`：该订单已全额退款。
+        - `EXIST_PROCESSING_REFUND`：该订单的前一笔退款仍在创建中，可稍后重试或调用退款查询。
+        - `REFUND_VALID_DATE_EXCEED`：订单已超出可退期限。
+        - `REFUND_NOT_ENOUGH_BALANCE`：商户可用余额不足以支付本次退款，退款失败，响应含该笔失败退款的 `refundId`；补足余额后以新的 `refundRequestId` 重新发起。
+        - `REFUND_NO_PERMISSION`：该商户未开通退款。
+        - `MERCHANT_FROZEN`：该商户已被平台暂停交易。
+        - `PRE_AUTH_ORDER`：预授权订单不可经本接口退款。
+        - `REFUND_MISMATCH`：该 `refundRequestId` 已用于其他订单，或与首次提交的金额不一致。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefundRequest'
+      responses:
+        '200':
+          description: 受理结果（成功或业务失败，判 result.resultStatus）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateRefundResponse'
+  /payments/cancel:
+    post:
+      tags:
+        - cancel
+      operationId: cancelPayment
+      summary: 关单（关闭未支付订单）
+      description: |
+        关闭尚未支付的订单，关闭后订单状态为 `CLOSED`，付款人不能再对该订单付款，不涉及资金。
+        订单已关闭、已失效或已失败时同样返回 `resultStatus` 为 `S`。
+
+        不能关闭时 `resultStatus` 为 `F`，常见结果码：
+
+        - `ORDER_PAID`：订单已支付；需要退还款项时调用退款接口。
+        - `ORDER_NOT_EXIST`：订单不存在。
+        - `ORDER_CANCEL_FAILED`：订单关闭失败。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelRequest'
+      responses:
+        '200':
+          description: 受理结果（成功或业务失败，判 result.resultStatus）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelResponse'
+  /payments/inquiryPayment:
+    post:
+      tags:
+        - order
+      operationId: getPayment
+      summary: 订单查询
+      description: |
+        按平台单号 `paymentId` 或商户单号 `paymentRequestId` 查订单状态 / 明细（只读、可安全重试）。
+        按 `paymentId` 查不到时，平台以同一值作为商户单号在本商户内再查一次。
+        查不到订单时返回 `resultCode=ORDER_NOT_FOUND`、`resultStatus=S`（查询本身成功、结果为无此单）。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InquiryPaymentRequest'
+      responses:
+        '200':
+          description: 订单查询结果
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InquiryPaymentResponse'
+  /payments/inquiryRefund:
+    post:
+      tags:
+        - order
+      operationId: getRefund
+      summary: 退款查询
+      description: |
+        按平台退款单号 `refundId` 或商户退款单号 `refundRequestId` 查退款状态 / 明细（只读、可安全重试）。
+        查不到退款单时返回 `resultCode=REFUND_NOT_FOUND`、`resultStatus=S`（查询本身成功、结果为无此单）。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InquiryRefundRequest'
+      responses:
+        '200':
+          description: 退款查询结果
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InquiryRefundResponse'
+  /payments/transactions:
+    post:
+      tags:
+        - transaction
+      operationId: listTransactions
+      summary: 交易流水查询（分页）
+      description: |
+        按日期分页查询交易流水（`page` / `pageLimit`，`pageLimit` 取 10–100）；只读。
+        收录范围：该日的付款、退款、退款失败回冲、返现与平台调整等交易记录（含非经本 API 发起的交易），不含结算划款。
+        **一笔付款或退款单可能对应多条流水记录。**
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryTransactionsRequest'
+      responses:
+        '200':
+          description: 流水查询结果（含 pagination）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryTransactionsResponse'
+  /payments/settlements:
+    post:
+      tags:
+        - settlement
+      operationId: listSettlements
+      summary: 结算记录查询（按结算日）
+      description: 按结算日 `yyyyMMdd` 查询该日的结算记录（含结算金额与银行信息）；只读。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuerySettlementsRequest'
+      responses:
+        '200':
+          description: 结算查询结果
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuerySettlementsResponse'
+  /payments/apple-pay/preOrder:
+    post:
+      tags:
+        - applepay
+      operationId: createApplepayOrder
+      summary: Apple Pay 预下单（第一步，返回唤起 Apple Pay sheet 参数）
+      description: |
+        Apple Pay 支付的第一步，使用独立接口，不经统一下单的 `scenarioCode`：创建订单并返回 `applePayParams`，
+        供客户端唤起 Apple Pay sheet。成功时 `resultStatus` 为 `U`（`resultCode` 为 `PAYMENT_IN_PROCESS`）。
+        Apple Pay 订单在订单查询与支付成功通知中的 `scenarioCode` 为 `CREDIT_CARD`。
+
+        同一 `Merchant-Code` 下以 `paymentRequestId` 作为幂等键，以同一 `paymentRequestId` 重复预下单的处理同统一下单。
+        `orderAmount.value` 以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplePayPreOrderRequest'
+      responses:
+        '200':
+          description: 预下单结果（成功 U / 失败 F，判 result.resultStatus）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplePayPreOrderResponse'
+  /payments/apple-pay/pay:
+    post:
+      tags:
+        - applepay
+      operationId: payApplepayOrder
+      summary: Apple Pay 扣款（第二步，提交 Apple Pay token 扣卡）
+      description: |
+        Apple Pay 支付的第二步：提交 Apple Pay token（可附 `customerId`）完成扣款。
+        扣款成功时 `resultStatus` 为 `S`，失败时为 `F`。
+        支付渠道未在时限内返回扣款结果时 `resultStatus` 为 `U`（`resultCode` 为 `PAYMENT_IN_PROCESS`），
+        商户系统应经订单查询核实支付结果。以 `paymentId` 作为幂等键。
+      parameters:
+        - $ref: '#/components/parameters/MerchantCode'
+        - $ref: '#/components/parameters/RequestTime'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Signature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplePayPayRequest'
+      responses:
+        '200':
+          description: 扣款结果（成功 S / 失败 F / 结果未知 U，判 result.resultStatus）
+          headers:
+            Merchant-Code:
+              $ref: '#/components/headers/MerchantCodeHeader'
+            Response-Time:
+              $ref: '#/components/headers/ResponseTime'
+            Nonce:
+              $ref: '#/components/headers/NonceHeader'
+            Signature:
+              $ref: '#/components/headers/SignatureHeader'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplePayPayResponse'
+components:
+  securitySchemes:
+    gatewaySignV2:
+      type: apiKey
+      in: header
+      name: Signature
+      description: |
+        RSA2 双向签名。
+        - 身份：商户以 `Merchant-Code` 与一对 RSA 密钥标识，在商户后台登记商户公钥并获取平台公钥。
+          签名相关的请求头见各接口参数，响应头见各接口响应。
+        - 算法：SHA256withRSA（`Signature` 头中标为 `algorithm=RS256`）、2048 位 RSA 密钥；签名结果先做 Base64 编码，再做 URL 编码。
+        - 请求：平台以**商户公钥**验证商户的请求签名；响应：平台以 **AlphaPay 平台私钥**签名，商户以平台公钥验签。
+        - `Signature` 头格式：`algorithm=RS256, keyVersion=<版本号>, signature=<urlEncode(base64(sign))>`。
+          请求侧的 `keyVersion` 须带上，取值不参与验签公钥的选择；响应侧的 `keyVersion` 为实际签名所用的平台密钥版本，
+          商户按它选择对应的平台公钥验签。
+
+        **待签内容**：请求与响应分别使用 `Request-Time` 和 `Response-Time` 构造待签内容（`{URI}` 只含路径）：
+
+        | 签名对象 | 待签内容 | 时间字段 | Nonce |
+        |---|---|---|---|
+        | 请求（商户发往平台） | `{METHOD} {URI}\n{Merchant-Code}.{Request-Time}.{Nonce}.{Body}` | 请求头 `Request-Time` | 请求头 `Nonce` |
+        | 同步响应（平台返回商户） | `{METHOD} {URI}\n{Merchant-Code}.{Response-Time}.{Nonce}.{Body}` | 响应头 `Response-Time`（平台生成的响应时间，不是请求时间）| 响应头 `Nonce`（平台生成的 32 位随机串，不是请求的 `Nonce`）|
+
+        请求与响应的 `{METHOD}` / `{URI}` 均取本次 HTTP 请求的方法与路径，`{Merchant-Code}` 相同。
+
+        **请求时间与 Nonce**（所有接口）：
+
+        - `Request-Time` 与服务器时间相差超过 5 分钟的请求返回 `SIGN_TIMEOUT`。
+        - 同一 `Merchant-Code` 下同一组 `Request-Time` + `Nonce` 至多受理一次，重复的请求返回 `SIGN_EXPIRED`；
+          重试时须使用新的 `Nonce` 并重新签名。
+  parameters:
+    MerchantCode:
+      name: Merchant-Code
+      in: header
+      required: true
+      description: 商户号，通常为 4–6 位，可在商户后台查看。
+      schema:
+        type: string
+    RequestTime:
+      name: Request-Time
+      in: header
+      required: true
+      description: |
+        请求时间，ISO-8601 带 offset（如 `2019-04-04T12:08:56.123+05:30`），建议精确到毫秒。
+        与服务器时间相差超过 5 分钟返回 `SIGN_TIMEOUT`；缺失返回 `INVALID_REQUEST_TIME`，格式不合法返回 `INVALID_PARAMETERS`。
+      schema:
+        type: string
+        format: date-time
+    Nonce:
+      name: Nonce
+      in: header
+      required: true
+      description: |
+        随机串（防重放），建议 32 位。同一 `Merchant-Code` 下同一组 `Request-Time` + `Nonce` 至多受理一次，重复返回 `SIGN_EXPIRED`。
+        缺失返回 `INVALID_PARAMETERS`。
+      schema:
+        type: string
+    Signature:
+      name: Signature
+      in: header
+      required: true
+      description: 签名头：algorithm=RS256, keyVersion=<版本号>, signature=<urlEncode(base64(sign))>
+      schema:
+        type: string
+  headers:
+    MerchantCodeHeader:
+      description: 商户号，与请求相同，通常为 4–6 位；参与响应待签内容的构造
+      required: true
+      schema:
+        type: string
+    NonceHeader:
+      description: 平台为响应生成的 32 位随机串（不是请求的 `Nonce`），参与响应待签内容的构造
+      required: true
+      schema:
+        type: string
+        minLength: 32
+        maxLength: 32
+    ResponseTime:
+      description: 响应时间，ISO-8601 带时区偏移、精确到毫秒；由平台生成，不是请求的 `Request-Time`
+      required: true
+      schema:
+        type: string
+        format: date-time
+    SignatureHeader:
+      description: 平台私钥对响应体的签名（同请求 Signature 头格式）
+      required: true
+      schema:
+        type: string
+  schemas:
+    Result:
+      type: object
+      description: 业务结果信封。业务失败时返回 HTTP 200，`resultStatus` 为 `F`。
+      properties:
+        resultCode:
+          type: string
+          description: |
+            业务结果码（字符串风格）。成功为 `SUCCESS`。
+
+            结果码可能扩展。除下列取值外，平台还可能返回其他结果码；商户系统应为未识别的结果码提供默认处理分支。
+
+            常见取值：
+            `PAYMENT_IN_PROCESS`（支付处理中，此时 `resultStatus` 为 `U`）/ `ORDER_MISMATCH`（保留码，当前不产生）/ `ORDER_PAID` /
+            `SYSTEMERROR` / `PARAM_INVALID`（见下文参数错误说明）/
+            `INVALID_MERCHANT_CODE`（商户号无效，或找不到对应的商户）/
+            `INVALID_METHOD_TYPE`（支付方式名称无效，区分大小写）/ `INVALID_PAYMENT_CODE`（付款码无效）/
+            `EXIST_PROCESSING_REFUND` / `REFUND_VALID_DATE_EXCEED`（超出最长 1 年的可退期限）/
+            `REFUND_NEED_REVIEW`（退款待审核，此时 `resultStatus` 为 `U`）/
+            `INVALID_REFUND_AMOUNT` / `REFUND_NOT_ENOUGH_BALANCE` / `FULL_REFUND_COMPLETED` /
+            `ORDER_NOT_EXIST` / `ORDER_CLOSED` / `ORDER_NOT_PAID` / `REFUND_MISMATCH` / `ORDER_CANCEL_FAILED`。
+
+            签名与商户校验未通过时 `resultStatus` 为 `F`，常见结果码包括：
+
+            - `INVALID_SHORT_ID`：缺 `Merchant-Code` 头，或该商户未登记公钥。
+            - `INVALID_MERCHANT`：商户未通过审核或已过期。
+            - `NOT_PERMITTED`：商户未开通本 API。
+            - `INVALID_REQUEST_TIME`：缺 `Request-Time` 头。
+            - `INVALID_SIGN`：签名缺失、算法不是 `RS256` 或验签失败。
+            - `SIGN_TIMEOUT`：`Request-Time` 与服务器时间相差超过 5 分钟。
+            - `SIGN_EXPIRED`：同一 `Merchant-Code` 下同一组 `Request-Time` + `Nonce` 重复使用。
+
+            查询类结果码：`ORDER_NOT_FOUND`（订单查询查不到订单）、`REFUND_NOT_FOUND`（退款查询查不到退款单），
+            此时 `resultStatus` 为 `S`，表示查询本身成功、结果为无此单。
+
+            下单结果码 `CREATE_FAIL`：订单已建立但未能受理，不会发生支付；
+            此时 `resultStatus` 为 `F`，响应仍返回 `paymentId`，可用于查询与对账，查询该订单的 `paymentStatus` 为 `FAILED`。
+            如需重新收款，商户系统应以新的商户订单号（`paymentRequestId`）重新下单。
+            渠道受理失败时 `resultStatus` 为 `F`、`resultCode` 为渠道结果码，响应带 `paymentId`，查询该订单的 `paymentStatus` 为 `FAILED`。
+
+            其他结果码：
+
+            - `INVALID_PARAMETERS` / `PARAM_INVALID`：两者均表示请求头或请求体参数不合法（含缺失必填字段、格式不合法）；
+              商户系统按同一参数错误分支处理，具体原因见 `resultMessage`。
+            - `SERVER_INTERNAL_ERROR` / `REMOTE_SERVICE_ERROR` / `INTERNAL_ERROR`：平台内部错误，处理结果未知，此时 `resultStatus` 为 `U`。
+              商户系统应先经查询接口确认，再决定是否重试，或联系平台。
+            - `FAILED`：Apple Pay 预下单或扣款未成功。
+            - `REFUND_NO_PERMISSION` / `MERCHANT_FROZEN` / `PRE_AUTH_ORDER`：退款被拒，含义见退款接口说明。
+        resultMessage:
+          type: string
+          description: 业务结果消息
+        resultStatus:
+          type: string
+          enum:
+            - S
+            - U
+            - F
+          description: S 成功 / F 失败 / U 业务结果未知或处于处理中间状态（收到 U 时应通过查询接口确认最终状态）
+      required:
+        - resultCode
+        - resultStatus
+    ResultEnvelope:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          $ref: '#/components/schemas/Result'
+    CurrencyCode:
+      type: string
+      pattern: ^[A-Z]{3}$
+      description: |
+        币种代码（ISO 4217 三位字母码）。银行卡类场景（`CREDIT_CARD` 与 Apple Pay）为商户结算币种，
+        其他场景为标价币种。取值以商户开通情况为准。
+    PricingCurrency:
+      type: string
+      pattern: ^[A-Z]{3}$
+      description: |
+        **标价币种**（ISO 4217 三位字母码），即订单计价所用币种，可与商户结算币种不同。
+        可用的标价币种以商户开通情况为准（至少含商户的结算币种与 `CNY`）。
+    SettlementCurrency:
+      type: string
+      pattern: ^[A-Z]{3}$
+      description: |
+        **结算币种**（ISO 4217 三位字母码），即商户入账与结算所用币种；每个商户有且只有一个结算币种，入驻时确定。
+    AmountValue:
+      type: string
+      pattern: ^\d+$
+      description: |
+        金额，以给定币种的最小计价单位表示；对有两位小数的币种，`100` 表示 `1.00`。
+    OrderAmountValue:
+      type: string
+      pattern: ^\d+$
+      description: |
+        订单金额，给定币种最小计价单位的整数值，以字符串表示；对有两位小数的币种，`100` 表示 `1.00`。
+    OrderAmount:
+      type: object
+      description: |
+        下单金额。`currency` 为标价币种，ISO 4217 三位字母码；可用的标价币种以商户开通情况为准（至少含商户的结算币种与 `CNY`），
+        其他取值返回参数错误。
+        以 `CNY` 标价的订单，按汇率折合商户结算币种后须不低于 0.01（如结算币种为 CAD 时须不低于 0.01 CAD）。
+      properties:
+        value:
+          $ref: '#/components/schemas/OrderAmountValue'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+      required:
+        - value
+        - currency
+    SettlementCurrencyAmount:
+      type: object
+      description: |
+        银行卡类下单金额，以**商户结算币种**扣款，`currency` 须为该商户的结算币种。
+        金额的表示方式与其他接口相同。
+      properties:
+        value:
+          $ref: '#/components/schemas/OrderAmountValue'
+        currency:
+          $ref: '#/components/schemas/SettlementCurrency'
+      required:
+        - value
+        - currency
+    AmountResp:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/AmountValue'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+    RefundAmount:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/AmountValue'
+      required:
+        - value
+    SettlementAmountResp:
+      type: object
+      description: 结算金额，以商户结算币种计；本对象出现时金额与币种均返回。
+      required:
+        - value
+        - currency
+      properties:
+        value:
+          $ref: '#/components/schemas/AmountValue'
+        currency:
+          $ref: '#/components/schemas/SettlementCurrency'
+    RefundAmountResp:
+      type: object
+      properties:
+        value:
+          $ref: '#/components/schemas/AmountValue'
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+      required:
+        - value
+        - currency
+    CreateOrderRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - scenarioCode
+        - paymentRequestId
+        - order
+      properties:
+        scenarioCode:
+          type: string
+          description: |
+            支付场景（共 11 种），各场景返回的支付凭据及其用法见响应 `paymentInfo`。
+
+            - `ONLINE_QRCODE`：浏览器扫码，支付宝、微信、银联；返回二维码与支付页地址。
+            - `ONLINE_WEB`：PC 浏览器，支付宝、银联；返回支付页地址。
+            - `NATIVE_QRCODE`：浏览器扫码，支付宝、微信；返回钱包原生码。
+            - `CREDIT_CARD`：浏览器，银行卡；仅需 3DS 验证时返回验证要素。
+            - `ONLINE_WAP`：移动端网页，支付宝、微信、银联；返回支付页地址。
+            - `JSAPI`：微信或支付宝内的网页；返回支付页地址。
+            - `NATIVE_JSAPI`：微信或支付宝内的网页；返回 JSBridge 调起参数。
+            - `APP`：商户 App，支付宝、微信、银联；返回 SDK 调起参数。
+            - `MINI_APP`：微信或支付宝小程序；返回调起参数。
+            - `OFFLINE_QRCODE`：门店收银屏展示二维码，支付宝、微信、银联；返回二维码。
+            - `OFFLINE`：门店扫付款人付款码，支付宝、微信、银联；不返回支付凭据。
+          enum:
+            - APP
+            - ONLINE_WAP
+            - JSAPI
+            - MINI_APP
+            - NATIVE_QRCODE
+            - NATIVE_JSAPI
+            - ONLINE_QRCODE
+            - ONLINE_WEB
+            - OFFLINE_QRCODE
+            - OFFLINE
+            - CREDIT_CARD
+        paymentRequestId:
+          type: string
+          description: 商户订单号，在同一 `Merchant-Code` 下用作幂等键
+        order:
+          type: object
+          required:
+            - orderAmount
+            - description
+          properties:
+            orderAmount:
+              $ref: '#/components/schemas/OrderAmount'
+            description:
+              type: string
+              maxLength: 128
+              description: 订单描述
+            notifyUrl:
+              type: string
+            redirectUrl:
+              type: string
+        paymentMethod:
+          type: object
+          properties:
+            paymentMethodType:
+              type: string
+              description: |
+                支付方式。各场景的允许值与必填性见请求体结构中按场景列出的条件；`CREDIT_CARD`
+                使用 `card`，`OFFLINE` 使用 `paymentMethod.paymentCode`，
+                `OFFLINE_QRCODE` 可不传支付方式，传时按所传支付方式收款。
+              enum:
+                - Alipay
+                - Wechat
+                - UnionPay
+            paymentCode:
+              type: string
+              description: 付款码内容（OFFLINE 场景）
+        customer:
+          type: object
+          description: |
+            付款人所在应用的标识。`NATIVE_JSAPI` / `MINI_APP` 场景须传 `appId` 与 `customerId`；
+            `APP` 场景下支付方式为 `Wechat` 时须传 `customer` 及其 `appId`（微信移动应用的 AppID），其余支付方式可不传。
+          properties:
+            appId:
+              type: string
+            customerId:
+              type: string
+        card:
+          type: object
+          description: |
+            银行卡信息（`CREDIT_CARD` 场景必传）。新卡传 `info`；使用此前存过的卡时传 `cardId` 与 `customerId`，无需传 `info`。
+            商户开通 3DS 验证时，须同时传付款人浏览器信息 `userAgent` / `screenHeight` / `screenWidth` / `browserLanguage`。
+          anyOf:
+            - title: 已存卡（cardId 路径）
+              required:
+                - cardId
+                - customerId
+            - title: 新卡（info 路径）
+              required:
+                - info
+              dependentSchemas:
+                remember:
+                  if:
+                    properties:
+                      remember:
+                        const: true
+                  then:
+                    required:
+                      - customerId
+                      - email
+          properties:
+            cardId:
+              type: string
+              description: |
+                此前存卡时返回的卡标识（见下单响应 `card.cardId`）。传本字段时无需传 `info`，
+                但**须同时传** `customerId`。卡标识应原样回传，无需解析其内容。
+            info:
+              type: object
+              description: |
+                新卡要素。`holder` / `address` / `postalCode` 必填；`number` / `expMonth` / `expYear` / `cvv` 须传，
+                以 `encodeStr` 传卡要素密文时这四项可不传（以密文中的值为准）。
+              required:
+                - holder
+                - address
+                - postalCode
+              properties:
+                number:
+                  type: string
+                expMonth:
+                  type: integer
+                  minimum: 1
+                  maximum: 12
+                  description: 到期月份（MM）
+                expYear:
+                  type: integer
+                  description: 到期年份，两位数（YY）
+                cvv:
+                  type: string
+                  description: 卡安全码
+                encodeStr:
+                  type: string
+                  description: 卡要素密文：把 `number` / `expMonth` / `expYear` / `cvv` 组成 JSON，用商户后台提供的平台公钥（即响应验签所用的平台公钥）RSA 加密后 Base64 编码
+                holder:
+                  type: string
+                address:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                country:
+                  type: string
+                  description: 国家代码（如 `CA`）
+                postalCode:
+                  type: string
+            remember:
+              type: boolean
+              description: |
+                是否存卡备用。为 `true` 时**须同时传** `customerId` 与 `email`。
+                是否存卡成功以响应是否返回 `card.cardId` 为准；返回后，后续下单可传 `card.cardId` 复用该卡。
+            customerId:
+              type: string
+              description: |
+                持卡人标识，由商户自定义，用于关联该持卡人存过的卡。存卡（`remember` 为 `true`）或使用已存卡（传 `cardId`）时必填；
+                同一持卡人应始终使用同一标识。
+            email:
+              type: string
+              description: 持卡人邮箱（存卡时必填）
+            userAgent:
+              type: string
+              description: 付款人浏览器的 User-Agent（商户开通 3DS 验证时必填）
+            screenHeight:
+              type: string
+              description: 付款人浏览器的屏幕高度，单位为像素（商户开通 3DS 验证时必填）
+            screenWidth:
+              type: string
+              description: 付款人浏览器的屏幕宽度，单位为像素（商户开通 3DS 验证时必填）
+            browserLanguage:
+              type: string
+              description: 付款人浏览器的语言，如 `en-US`（商户开通 3DS 验证时必填）
+        env:
+          type: object
+          properties:
+            osType:
+              type: string
+              enum:
+                - android
+                - iphone
+                - ipad
+            version:
+              type: string
+      allOf:
+        - if:
+            required:
+              - scenarioCode
+            properties:
+              scenarioCode:
+                const: CREDIT_CARD
+          then:
+            properties:
+              order:
+                properties:
+                  orderAmount:
+                    $ref: '#/components/schemas/SettlementCurrencyAmount'
+        - if:
+            properties:
+              scenarioCode:
+                const: CREDIT_CARD
+          then:
+            required:
+              - order
+              - card
+        - if:
+            properties:
+              scenarioCode:
+                const: OFFLINE
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentCode
+        - if:
+            properties:
+              scenarioCode:
+                const: ONLINE_WEB
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - UnionPay
+        - if:
+            properties:
+              scenarioCode:
+                const: ONLINE_QRCODE
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+                      - UnionPay
+        - if:
+            properties:
+              scenarioCode:
+                const: NATIVE_QRCODE
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+        - if:
+            properties:
+              scenarioCode:
+                const: NATIVE_JSAPI
+          then:
+            required:
+              - paymentMethod
+              - customer
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+              customer:
+                required:
+                  - appId
+                  - customerId
+        - if:
+            properties:
+              scenarioCode:
+                const: MINI_APP
+          then:
+            required:
+              - paymentMethod
+              - customer
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+              customer:
+                required:
+                  - appId
+                  - customerId
+        - if:
+            properties:
+              scenarioCode:
+                const: JSAPI
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+        - if:
+            properties:
+              scenarioCode:
+                const: ONLINE_WAP
+          then:
+            required:
+              - paymentMethod
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+                      - UnionPay
+        - if:
+            properties:
+              scenarioCode:
+                const: APP
+          then:
+            required:
+              - paymentMethod
+              - env
+            properties:
+              paymentMethod:
+                required:
+                  - paymentMethodType
+                properties:
+                  paymentMethodType:
+                    enum:
+                      - Alipay
+                      - Wechat
+                      - UnionPay
+              env:
+                required:
+                  - osType
+                  - version
+    CreateOrderResponse:
+      type: object
+      required:
+        - result
+      properties:
+        scenarioCode:
+          type: string
+          description: |
+            回显请求的受理场景，与请求侧允许值一致。
+          enum:
+            - APP
+            - ONLINE_WAP
+            - JSAPI
+            - MINI_APP
+            - NATIVE_QRCODE
+            - NATIVE_JSAPI
+            - ONLINE_QRCODE
+            - ONLINE_WEB
+            - OFFLINE_QRCODE
+            - OFFLINE
+            - CREDIT_CARD
+        paymentRequestId:
+          type: string
+        order:
+          type: object
+          required:
+            - orderAmount
+            - description
+          properties:
+            orderAmount:
+              $ref: '#/components/schemas/AmountResp'
+            description:
+              type: string
+              maxLength: 128
+              description: 订单描述（回显请求值）
+            notifyUrl:
+              type: string
+            redirectUrl:
+              type: string
+            payAmount:
+              allOf:
+                - $ref: '#/components/schemas/AmountResp'
+              description: 付款人实际支付的金额（仅 `OFFLINE` 场景、且已得出扣款结果时返回），可能与 `orderAmount` 不同
+        paymentMethod:
+          type: object
+          properties:
+            paymentMethodType:
+              type: string
+              enum:
+                - Alipay
+                - Wechat
+                - UnionPay
+            paymentCode:
+              type: string
+        card:
+          type: object
+          description: |
+            存卡结果。仅在 `CREDIT_CARD` 场景且存卡成功时返回；请求传了 `card.remember=true`
+            而响应未返回本对象时，表示未存卡，不能复用。
+          properties:
+            cardId:
+              type: string
+              description: |
+                卡标识，后续下单可传 `card.cardId` 复用该卡（须同时传 `card.customerId`）。
+                卡标识应原样保存，并在后续请求中回传，无需解析其内容。
+            customerId:
+              type: string
+              description: 持卡人标识，与 `cardId` 配对使用
+        customer:
+          type: object
+          properties:
+            appId:
+              type: string
+            customerId:
+              type: string
+        paymentInfo:
+          type: object
+          description: |
+            支付凭据（按场景返回：支付页地址、二维码图片、SDK 参数或原生码串）。
+            返回 3DS method 数据时，本对象仅包含 `threeDSMethodUrl` 与
+            `threeDSMethodData`，不同时返回其他支付凭据字段。
+
+            按场景的用法：
+
+            - `ONLINE_WEB`：浏览器跳转 `payUrl`，经支付页进入支付宝 / 银联的渠道页面。支付后跳回的商户页面地址
+              取下单时的 `order.redirectUrl`。
+              跳回后商户系统应经订单查询确认支付结果。
+            - `NATIVE_QRCODE`：`payUrl` 为支付渠道的原生码内容，可用于生成二维码。支付方式为 `Alipay` 时，
+              `paymentUrl` 为唤起支付宝 App 的地址，浏览器直接跳转（`window.location.href = paymentUrl`）即可唤起；
+              支付方式为 `Wechat` 时，`paymentUrl` 与 `payUrl` 相同。
+            - `ONLINE_QRCODE`：`paymentUrl` 为用于生成二维码的支付地址，`paymentQRImage` 为该地址的 Base64 二维码图
+              （可直接作 `img` 的 `src`）；`payUrl` 为 AlphaPay 支付页地址，可让浏览器跳转进入支付页。
+            - `OFFLINE_QRCODE`：以 `paymentUrl` / `paymentQRImage` 在收银屏展示二维码供付款人扫码。
+            - `JSAPI` / `ONLINE_WAP`：浏览器跳转 `payUrl` 完成支付。
+            - `NATIVE_JSAPI`：`sdkParams` 交给 JSBridge 发起支付；同时返回 `payUrl`（AlphaPay 支付页地址）。
+            - `APP` / `MINI_APP`：返回 `sdkParams`，交给对应 SDK / 小程序发起支付。
+            - `CREDIT_CARD`：需要 3DS 验证时返回 `threeDSMethodUrl` 与 `threeDSMethodData`，否则不返回支付凭据。
+          properties:
+            paymentUrl:
+              type: string
+            paymentQRImage:
+              type: string
+            sdkParams:
+              type:
+                - object
+                - string
+              description: |
+                SDK / JSBridge 调起参数，**按场景与支付方式为 JSON 对象或字符串**
+                （如 `APP` 场景银联返回字符串，即传给 `UPPayAssistEx.startPay` 的 `tn`）。
+                商户系统应原样传给对应 SDK / JSBridge，并按对象与字符串两种类型处理。
+            payUrl:
+              type: string
+            threeDSMethodUrl:
+              type: string
+              description: |
+                3DS method 调用地址。**条件字段**：仅 `CREDIT_CARD` 场景、且需要发起 3DS 验证时返回；
+                与 `threeDSMethodData` **成对出现或都不出现**。
+                商户系统应在付款人浏览器中以 `threeDSMethodData` 调用本地址发起 3DS 验证；验证结束后付款人返回 `order.redirectUrl`，
+                支付结果以订单查询接口的结果为准，支付通知用于触发查询。
+            threeDSMethodData:
+              type: string
+              description: 3DS method 调用数据（与 `threeDSMethodUrl` 成对，条件同上）。
+        paymentCreateTime:
+          type: string
+          format: date-time
+        paymentExpireTime:
+          type: string
+          format: date-time
+          description: |
+            订单支付截止时刻。未支付订单默认有效 5 分钟，有效期可由商户在商户后台调整；
+            下单后商户系统应轮询订单查询接口，直至订单已支付、已关闭、已失败或已超过 `paymentExpireTime`。
+        paymentId:
+          type: string
+          description: |
+            平台订单号。订单已建立时返回，包括受理成功、订单已建立但未能受理（`result.resultCode` 为 `CREATE_FAIL`）
+            与渠道受理失败三种情况，可用于查询与对账；订单建立前即失败（如验签失败、参数无效、商户无效）的响应不含本字段。
+        result:
+          $ref: '#/components/schemas/Result'
+    CreateRefundRequest:
+      type: object
+      required:
+        - paymentId
+        - refundRequestId
+        - refund
+      properties:
+        paymentId:
+          type: string
+          description: 平台单号（原支付单）
+        refundRequestId:
+          type: string
+          description: 商户退款单号
+        refund:
+          type: object
+          required:
+            - refundAmount
+          properties:
+            refundAmount:
+              $ref: '#/components/schemas/RefundAmount'
+            description:
+              type: string
+              description: 退款说明，建议不超过 128 字符
+            notifyUrl:
+              type: string
+    CreateRefundResponse:
+      type: object
+      required:
+        - result
+      properties:
+        refundId:
+          type: string
+          description: |
+            平台退款单号。退款受理、进入审核（`resultCode` 为 `REFUND_NEED_REVIEW`）或因余额不足失败（`resultCode` 为 `REFUND_NOT_ENOUGH_BALANCE`）时返回。
+        paymentId:
+          type: string
+          description: 平台单号（原支付单，回显）
+        refundRequestId:
+          type: string
+          description: 商户退款单号（回显）
+        refund:
+          type: object
+          description: 退款明细回显
+          properties:
+            refundAmount:
+              $ref: '#/components/schemas/RefundAmount'
+            description:
+              type: string
+            notifyUrl:
+              type: string
+        refundTime:
+          type: string
+          format: date-time
+        result:
+          $ref: '#/components/schemas/Result'
+    CancelRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - paymentId
+      properties:
+        paymentId:
+          type: string
+          description: 平台单号
+    CancelResponse:
+      type: object
+      required:
+        - result
+      properties:
+        paymentRequestId:
+          type: string
+          description: 商户订单号
+        paymentId:
+          type: string
+          description: 平台订单号
+        cancelTime:
+          type: string
+          format: date-time
+          description: 订单关闭时刻
+        result:
+          $ref: '#/components/schemas/Result'
+    InquiryPaymentRequest:
+      type: object
+      description: '`paymentId` 与 `paymentRequestId` 至少传一个；都传时按 `paymentId` 查。'
+      properties:
+        paymentId:
+          type: string
+          description: 平台单号
+        paymentRequestId:
+          type: string
+          description: 商户单号（下单时的 `paymentRequestId`）
+    InquiryPaymentResponse:
+      description: 订单查询响应，由业务字段与结果信封 `result` 组成。
+      allOf:
+        - $ref: '#/components/schemas/InquiryPaymentBody'
+        - $ref: '#/components/schemas/ResultEnvelope'
+    InquiryPaymentBody:
+      description: 订单查询的业务字段（不含 `result`）。支付成功通知的 body 使用相同结构。
+      type: object
+      properties:
+        scenarioCode:
+          type: string
+          enum:
+            - APP
+            - ONLINE_WAP
+            - JSAPI
+            - MINI_APP
+            - NATIVE_QRCODE
+            - NATIVE_JSAPI
+            - ONLINE_QRCODE
+            - ONLINE_WEB
+            - OFFLINE_QRCODE
+            - OFFLINE
+            - CREDIT_CARD
+          description: 支付场景，按订单的支付场景返回；无对应场景的订单不返回本字段。
+        paymentRequestId:
+          type: string
+        order:
+          type: object
+          required:
+            - orderAmount
+          properties:
+            orderAmount:
+              $ref: '#/components/schemas/AmountResp'
+            description:
+              type: string
+              maxLength: 128
+            notifyUrl:
+              type: string
+            redirectUrl:
+              type: string
+        paymentCreateTime:
+          type: string
+          format: date-time
+        paymentExpireTime:
+          type: string
+          format: date-time
+        paymentTime:
+          type: string
+          format: date-time
+          description: |
+            **付款完成时间**（下单时间见 `paymentCreateTime`），即实际支付完成时刻；未支付的订单不返回本字段。
+            订单查询与支付通知中的本字段取值相同。
+        paymentId:
+          type: string
+        paymentStatus:
+          type: string
+          description: |
+            订单状态：
+
+            - `PAYMENT_IN_PROCESS`：等待支付。
+            - `CLOSED`：已关闭。
+            - `FAILED`：平台未受理或支付失败，订单不可再支付；如需重新收款，商户系统应以新的 `paymentRequestId` 重新下单。
+            - `SUCCESS`：支付成功。
+            - `PARTIAL_REFUND`：支付成功，已部分退款。
+            - `FULL_REFUND`：支付成功，已全额退款。
+          enum:
+            - PAYMENT_IN_PROCESS
+            - CLOSED
+            - FAILED
+            - SUCCESS
+            - PARTIAL_REFUND
+            - FULL_REFUND
+        settlementAmount:
+          allOf:
+            - $ref: '#/components/schemas/SettlementAmountResp'
+          description: |
+            该笔订单的实际结算金额，以商户结算币种计。
+            **订单已支付时始终返回**（`paymentStatus` 为 `SUCCESS` / `PARTIAL_REFUND` / `FULL_REFUND`）；
+            未支付的订单不返回本字段。支付成功通知中始终包含本字段。
+    InquiryRefundRequest:
+      type: object
+      description: '`refundId` 与 `refundRequestId` 至少传一个；都传时按 `refundId` 查。'
+      properties:
+        refundId:
+          type: string
+          description: 平台退款单号
+        refundRequestId:
+          type: string
+          description: 商户退款单号
+    InquiryRefundResponse:
+      description: 退款查询响应，由业务字段与结果信封 `result` 组成。
+      allOf:
+        - $ref: '#/components/schemas/InquiryRefundBody'
+        - $ref: '#/components/schemas/ResultEnvelope'
+    InquiryRefundBody:
+      description: 退款查询的业务字段（不含 `result`）。退款通知的 body 使用相同结构。
+      type: object
+      additionalProperties: true
+      properties:
+        paymentId:
+          type: string
+        refundRequestId:
+          type: string
+          description: |
+            商户退款单号。通过本 API 发起的退款在查询与通知中本字段始终有值。
+            未通过本 API 发起的退款（如在商户后台操作、平台撤单或系统自动退款）本字段为空。
+        refundId:
+          type: string
+          description: 平台退款号
+        refundTime:
+          type: string
+          format: date-time
+          description: |
+            **退款发起时间**，即退款单创建时间，不是款项到账时间。退款查询与退款通知中的本字段取值相同。
+        refundStatus:
+          type: string
+          description: |
+            退款状态：
+
+            - `REFUND_IN_PROCESS`：退款已创建，尚未被支付渠道受理。
+            - `SUCCESS`：退款已被支付渠道受理，自此计入商户账务与结算；不表示款项已退回付款人。
+            - `FAILED`：退款失败。
+          enum:
+            - REFUND_IN_PROCESS
+            - SUCCESS
+            - FAILED
+        refund:
+          type: object
+          properties:
+            refundAmount:
+              $ref: '#/components/schemas/RefundAmountResp'
+            description:
+              type: string
+            notifyUrl:
+              type: string
+        settlementAmount:
+          allOf:
+            - $ref: '#/components/schemas/SettlementAmountResp'
+          description: |
+            本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
+            取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
+            **退款被支付渠道受理后始终返回**，之后退款失败时仍保留该值；
+            尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。
+    QueryTransactionsRequest:
+      type: object
+      required:
+        - date
+        - page
+        - pageLimit
+        - transactionType
+      properties:
+        date:
+          type: string
+          pattern: ((19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01]))
+          description: 交易日期 yyyyMMdd，按 UTC-8 的自然日
+        page:
+          type: integer
+          minimum: 1
+          description: 指定的页码
+        pageLimit:
+          type: integer
+          minimum: 10
+          maximum: 100
+          description: 每页条数
+        transactionType:
+          type: string
+          enum:
+            - All
+            - Credit
+            - Debit
+          description: 账务类型：`All` 返回全部流水，`Credit` 只返回入账流水，`Debit` 只返回出账流水
+    QueryTransactionsResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - result
+      properties:
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              requestId:
+                type: string
+                description: 该流水所属支付订单的商户单号（`paymentRequestId`）；退款流水返回原支付订单的商户单号。
+              transactionId:
+                type: string
+                description: |
+                  该流水所属**支付订单的平台单号**（即 `paymentId`）；退款流水同样返回其原支付单的平台单号。
+                  本字段不是流水行的唯一标识。
+              amount:
+                $ref: '#/components/schemas/AmountValue'
+              currency:
+                $ref: '#/components/schemas/PricingCurrency'
+              transactionType:
+                type: string
+                enum:
+                  - Credit
+                  - Debit
+                description: |
+                  账务方向：`Credit` 为入账（付款、退款失败回冲），`Debit` 为出账（退款）。
+              settleAmount:
+                allOf:
+                  - $ref: '#/components/schemas/AmountValue'
+                description: 该流水计入商户结算的金额（以 `settleCurrency` 计），是否已扣除手续费以商户签约的计费条款为准。
+              settleCurrency:
+                $ref: '#/components/schemas/SettlementCurrency'
+              exchangeRate:
+                type: string
+                description: 成交汇率（十进制字符串），表示 1 单位 `settleCurrency` 折合 `exchangeRate` 单位 `currency`，如结算币种为 CAD、付款币种为 CNY 时形如 `5.2`。仅供展示，金额以 `amount` / `settleAmount` 为准。
+              paymentMethod:
+                type: string
+                enum:
+                  - Alipay
+                  - Wechat
+                  - UnionPay
+                  - CreditCard
+                description: |
+                  该笔流水所属支付的支付方式：`Alipay` / `Wechat` / `UnionPay` 按付款人使用的支付方式返回，
+                  银行卡与 Apple Pay 返回 `CreditCard`。
+              createTime:
+                type: string
+                format: date-time
+                description: 该流水所属**支付订单的创建时间**（退款流水同样取原支付单的创建时间），非流水行生成时间。
+              transactionTime:
+                type: string
+                format: date-time
+                description: 该流水发生时刻；按 `date` 查询时以本字段所在日期为准。
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            pageLimit:
+              type: integer
+            totalPage:
+              type: integer
+            total:
+              type: integer
+        result:
+          $ref: '#/components/schemas/Result'
+    QuerySettlementsRequest:
+      type: object
+      required:
+        - date
+      properties:
+        date:
+          type: string
+          pattern: ((19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01]))
+          description: 结算日 yyyyMMdd
+    QuerySettlementsResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - result
+      properties:
+        settlements:
+          type: array
+          items:
+            type: object
+            properties:
+              settleInfo:
+                type: object
+                description: 结算信息。金额字段均以商户结算币种的最小计价单位表示（对有两位小数的币种，`100` 表示 `1.00`）。
+                properties:
+                  settleNo:
+                    type: string
+                    description: 清算唯一编号
+                  creditAmount:
+                    type: string
+                    description: 本次结算 Credit 金额
+                  debitAmount:
+                    type: string
+                    description: 本次结算 Debit 金额
+                  netAmount:
+                    type: string
+                    description: 本次结算净交易金额（creditAmount − debitAmount）
+                  serviceFee:
+                    type: string
+                    description: 平台服务费
+                  settleAmount:
+                    type: string
+                    description: 商户结算金额
+              bankInfo:
+                type: object
+                description: |
+                  本次结算的收款银行账户，各字段有值时返回；美国账户的 `transitNo` 为 routing number。
+                properties:
+                  storeCode:
+                    type: string
+                    description: 店铺编号（商家自设）
+                  companyName:
+                    type: string
+                    description: 商户银行开户名称
+                  transitNo:
+                    type: string
+                    description: 支行编号
+                  institutionNo:
+                    type: string
+                    description: 银行编号
+                  accountNo:
+                    type: string
+                    description: 结算银行账号，只返回末 4 位掩码，形如 `•••• 5678`
+        result:
+          $ref: '#/components/schemas/Result'
+    ApplePayPreOrderRequest:
+      type: object
+      required:
+        - paymentRequestId
+        - order
+      properties:
+        paymentRequestId:
+          type: string
+          description: 商户单号
+        merchantIdentifier:
+          type: string
+          description: Apple Pay Merchant Identifier
+        order:
+          type: object
+          required:
+            - orderAmount
+          properties:
+            orderAmount:
+              type: object
+              description: |
+                预下单金额，以商户结算币种扣款。`currency` 可不传；传时应为商户结算币种。
+              required:
+                - value
+              properties:
+                value:
+                  $ref: '#/components/schemas/AmountValue'
+                currency:
+                  $ref: '#/components/schemas/SettlementCurrency'
+            description:
+              type: string
+              description: 订单描述（可选，建议不超过 128 字符）
+            notifyUrl:
+              type: string
+    ApplePayPreOrderResponse:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          $ref: '#/components/schemas/Result'
+        paymentRequestId:
+          type: string
+        paymentId:
+          type: string
+        paymentCreateTime:
+          type: string
+          format: date-time
+        paymentExpireTime:
+          type: string
+          format: date-time
+        applePayParams:
+          $ref: '#/components/schemas/ApplePayParams'
+    ApplePayParams:
+      type: object
+      description: 唤起 Apple Pay sheet 的参数
+      properties:
+        orderId:
+          type: string
+        merchantIdentifier:
+          type: string
+        countryCode:
+          type: string
+        currencyCode:
+          $ref: '#/components/schemas/SettlementCurrency'
+        label:
+          type: string
+        amount:
+          type: string
+          pattern: ^\d+(\.\d+)?$
+          description: |
+            唤起 Apple Pay sheet 的支付金额，以币种主单位表示的十进制字符串（如 `0.01`）。
+            直接交给 Apple Pay 客户端使用。
+        supportedNetworks:
+          type: array
+          items:
+            type: string
+        merchantCapabilities:
+          type: array
+          items:
+            type: string
+    ApplePayPayRequest:
+      type: object
+      required:
+        - paymentId
+        - token
+      properties:
+        paymentId:
+          type: string
+          description: 平台订单号（由 Apple Pay 预下单接口返回）
+        customerId:
+          type: string
+        token:
+          $ref: '#/components/schemas/ApplePayToken'
+    ApplePayToken:
+      type: object
+      description: Apple Pay PKPaymentToken（客户端在 Apple Pay sheet 中完成授权后获得）
+      required:
+        - paymentData
+      properties:
+        transactionIdentifier:
+          type: string
+        paymentMethod:
+          type: object
+          properties:
+            displayName:
+              type: string
+            network:
+              type: string
+            type:
+              type: string
+        paymentData:
+          type: object
+          required:
+            - version
+            - data
+            - signature
+            - header
+          properties:
+            version:
+              type: string
+            data:
+              type: string
+            signature:
+              type: string
+            header:
+              type: object
+              required:
+                - publicKeyHash
+                - ephemeralPublicKey
+              properties:
+                publicKeyHash:
+                  type: string
+                ephemeralPublicKey:
+                  type: string
+                transactionId:
+                  type: string
+    ApplePayPayResponse:
+      type: object
+      required:
+        - result
+      properties:
+        result:
+          $ref: '#/components/schemas/Result'
+        paymentRequestId:
+          type: string
+        paymentId:
+          type: string
+        paymentStatus:
+          type: string
+          enum:
+            - PAYMENT_IN_PROCESS
+            - CLOSED
+            - FAILED
+            - SUCCESS
+            - PARTIAL_REFUND
+            - FULL_REFUND
+          description: 订单状态，取值与订单查询的 `paymentStatus` 相同
+        paymentTime:
+          type: string
+          format: date-time
+        transactionId:
+          type: string
+          description: 渠道交易号

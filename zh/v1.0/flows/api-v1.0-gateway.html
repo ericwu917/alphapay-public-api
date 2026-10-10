@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>开放 API v1.0 — 集成指南</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:920px;margin:2rem auto;padding:0 1.2rem;line-height:1.65;color:#24292f}h1{border-bottom:1px solid #d0d7de;padding-bottom:.3rem}h2{margin-top:2rem;border-bottom:1px solid #eaecef;padding-bottom:.2rem}table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}th,td{border:1px solid #d0d7de;padding:.4rem .6rem;text-align:left}th{background:#f6f8fa}code{background:#eff1f3;padding:.1rem .35rem;border-radius:4px;font-size:.88em}.mermaid{margin:1.2rem 0;text-align:center}blockquote{color:#57606a;border-left:.25rem solid #d0d7de;padding:.2rem 1rem;margin:1rem 0}a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}small{color:#656d76}</style></head><body>
+<p><a href="../../index.html">← 开放 API 文档</a></p>
+<div id="content"></div>
+<script type="text/plain" id="src">
+# 开放 API v1.0 —— 集成指南
+
+> 本文说明 AlphaPay 开放 API v1.0 的接入方式：支付场景与接入方式、接入准备、请求约定、签名、通知处理，以及各集成场景的接口调用顺序。各接口的字段、取值与错误码见 [API 参考](../api-v1.0-gateway/index.html)；平台向商户推送的通知见 [Webhook 参考](../api-v1.0-gateway-webhook/index.html)。
+
+## 概览
+
+商户接入前须与 AlphaPay 签约，并开通所需的支付产品。
+
+接口地址为 `https://{host}/api/v1.0`，其中 `{host}` 为平台提供的接入域名。
+
+完整地址为接口地址加接口路径，例如 `https://{host}/api/v1.0/gateway/partners/{partner_code}/orders/{order_id}`。本文与 API 参考中的接口路径均从 `/api/v1.0` 之后写起。卡支付预下单（#53）与卡支付收银台（#52）例外：二者使用平台提供的卡支付接入域名，#53 的路径前缀同为 `/api/v1.0`；#52 的完整地址由 #53 返回，商户照原样使用。
+
+- **传输**：须使用 TLS 1.2 或更高版本。
+- **字符集**：UTF-8。
+- **请求头**：请求头 `Accept` 填 `application/json`（支付页除外，见「支付页地址的签名」）；PUT / POST 请求另带 `Content-Type: application/json`。`Accept` 含 `text/html` 时，失败结果不以 JSON 返回，而是跳转至平台错误页。服务端调用应固定使用 `application/json`。
+- **时间与日期**：响应与通知中的业务时间格式为 `yyyy-MM-dd HH:mm:ss`，日期参数与日期字段格式为 `yyyyMMdd`，均按 UTC-8；结算记录查询（#8）的日期参数为结算日。签名用的 `time` 是 UTC 毫秒时间戳。
+- **错误提示语言**：`return_msg` 支持中文与英文，按请求头 `Accept-Language` 选择。语言只影响文案，`return_code` 与业务字段不变。
+
+## 支付场景与接入方式
+
+商户先按收款场景与付款人所在环境确定接入方式，再调用对应的下单接口。图中末级节点为对应的流程章节，各场景可用的支付方式见下表。
+
+```mermaid
+flowchart LR
+    M["商户收款场景"]
+    M --> ON["线上收款"]
+    M --> RT["门店收款"]
+
+    ON --> PC["PC 浏览器"]
+    ON --> MB["手机浏览器"]
+    ON --> IW["微信或支付宝内网页"]
+    ON --> MA["商户 App"]
+    ON --> MP["小程序"]
+    RT --> POS["收银设备"]
+
+    PC --> O17["扫码下单<br/>createQrcodeOrder"]
+    PC --> O19["原生二维码下单<br/>createNativeQrcodeOrder"]
+    PC --> O26["Online 下单<br/>createOnlineOrder"]
+    PC --> O53["卡支付预下单<br/>createCardOrder"]
+    PC --> O20["银联在线下单<br/>createUnionpayOnlineOrder"]
+    PC --> O30["支付宝网关下单<br/>createAlipayGatewayOrder"]
+    PC --> O31["Alipay+ 下单<br/>createAlipayPlusOrder"]
+    MB --> O24["H5 下单<br/>createH5Order"]
+    MB --> O53
+    MB --> O31
+    IW --> O25["JSAPI 下单<br/>createJsapiOrder"]
+    IW --> O32["微信 JSAPI 下单<br/>createWechatJsapiOrder"]
+    IW --> O21["原生 JSAPI 下单<br/>createNativeJsapiOrder"]
+    MA --> O18["App 下单<br/>createAppOrder"]
+    MA --> O29["支付宝 App 下单<br/>createAlipayAppOrder"]
+    MA --> O24
+    MP --> O22["小程序下单<br/>createMiniProgramOrder"]
+    POS --> O27["付款码被扫<br/>createMicropayOrder"]
+    POS --> O28["门店扫码下单<br/>createRetailQrcodeOrder"]
+
+    O17 --> F1["流程：跳转支付页"]
+    O26 --> F1
+    O53 --> F1
+    O20 --> F1
+    O24 --> F1
+    O25 --> F1
+    O30 --> F1
+    O31 --> F1
+    O32 --> F1
+    O19 --> F2["流程：自行展示二维码"]
+    O28 --> F2
+    O21 --> F3["流程：在钱包或 App 内拉起"]
+    O18 --> F3
+    O29 --> F3
+    O22 --> F3
+    O27 --> F4["流程：付款码收款"]
+
+    M --> SP["委托代扣"]
+    SP --> O39["委托代扣 App 签约<br/>createAutodebitAppContract"]
+    SP --> O41["委托代扣 H5 签约<br/>createAutodebitH5Contract"]
+    O39 --> F6["流程：委托代扣"]
+    O41 --> F6
+```
+
+| 场景 | 付款人环境 | 接入方式 | 接口 | 支付方式 | 流程章节 |
+|---|---|---|---|---|---|
+| 线上 | PC 浏览器 | 商户页面展示二维码，或跳转平台扫码支付页 | 扫码下单（#17） | 支付宝、微信、银联 | 跳转支付页 |
+| 线上 | PC 浏览器 | 商户按返回的二维码内容自行生成二维码 | 原生二维码下单（#19） | 支付宝、微信 | 自行展示二维码 |
+| 线上 | PC 浏览器 | 跳转支付宝或银联官方页面 | Online 下单（#26） | 支付宝、银联 | 跳转支付页 |
+| 线上 | PC 浏览器 | 跳转支付宝或银联官方页面 | 支付宝网关下单（#30） | 支付宝、银联 | 跳转支付页 |
+| 线上 | PC 或手机浏览器 | 跳转 Alipay+ 支付页 | Alipay+ 下单（#31） | Alipay+ | 跳转支付页 |
+| 线上 | 手机浏览器、App 内的 WebView | 跳转 H5 支付页 | H5 下单（#24） | 支付宝、微信（需另行申请）、银联 | 跳转支付页 |
+| 线上 | 微信或支付宝内的网页 | 跳转 JSAPI 支付页 | JSAPI 下单（#25） | 支付宝、微信 | 跳转支付页 |
+| 线上 | 微信内的网页 | 跳转微信 JSAPI 支付页 | 微信 JSAPI 下单（#32） | 微信 | 跳转支付页 |
+| 线上 | 微信或支付宝内的网页 | 按返回参数在钱包内调起支付 | 原生 JSAPI 下单（#21） | 支付宝、微信 | 在钱包或 App 内拉起 |
+| 线上 | 商户 App | 按返回参数调起钱包 SDK | App 下单（#18） | 支付宝、微信、银联 | 在钱包或 App 内拉起 |
+| 线上 | 商户 App | 按返回参数调起支付宝 SDK | 支付宝 App 下单（#29） | 支付宝 | 在钱包或 App 内拉起 |
+| 线上 | 小程序 | 按返回参数在小程序内调起支付 | 小程序下单（#22） | 支付宝、微信 | 在钱包或 App 内拉起 |
+| 线上 | PC 或手机浏览器 | 跳转卡支付收银台，付款人在页内输入卡信息 | 卡支付预下单（#53） | 银行卡 | 跳转支付页 |
+| 线上 | PC 浏览器 | 跳转银联卡号支付页，付款人在页内输入银联卡信息 | 银联在线下单（#20） | 银联 | 跳转支付页 |
+| 门店 | 收银设备 | 扫付款人出示的付款码 | 付款码被扫（#27） | 支付宝、微信、银联 | 付款码收款 |
+| 门店 | 收银设备 | 收银设备展示二维码，付款人扫码；指定银联时可能返回支付页地址 | 门店扫码下单（#28） | 支付宝、微信、银联 | 自行展示二维码 |
+| 委托代扣 | 付款人在渠道内确认授权 | 签约后由商户按合约发起扣款 | App 签约（#39）、H5 签约（#41）、扣款（#42） | 微信 | 委托代扣 |
+
+### 币种
+
+- **订单币种**（`currency`）：标价币种，ISO 4217 三位字母码。可用的标价币种以商户开通情况为准（至少含商户的结算币种与 `CNY`），其他取值返回 `PARAM_INVALID`；省略时取商户的结算币种。
+- **结算币种**：每个商户有且只有一个结算币种，入驻时确定。标价币种与结算币种不同的订单按成交时汇率折算入结算，成交汇率见订单查询（#5）的 `rate` 与交易流水（#7）的 `exchange_rate`。以 `CNY` 标价的订单折合结算币种后须不低于 0.01。
+
+### 接入方式的区别
+
+- JSAPI 支付页只能在微信或支付宝内打开的网页中使用；H5 支付页可在手机上的任意浏览器或 App 内的 WebView 中使用。
+- Online 下单（#26）把付款人带到支付宝或银联官方页面，付款人可在页面上扫码，或登录账户完成付款（选择银联时 `pay_url` 也可能指向托管支付页 #55）；扫码下单（#17）返回二维码与支付页地址，商户可在自己的页面上展示二维码，也可把付款人带到平台支付页扫码。
+
+## 接入准备
+
+1. **商户编码**（partner code）：即接口路径中的 `{partner_code}`，签约后可在商户后台查看。
+2. **凭据**（Gateway Credential）：平台为每个商户签发的签名密钥，仅用于商户系统计算签名，不随请求传递。完整值可在商户后台开发者页查看。凭据应只保存在服务端；如有泄露，商户应联系平台重置，并在商户系统中换用新凭据。
+3. **AppID 登记**：使用微信 App 支付、微信小程序支付或微信原生 JSAPI 前，商户须向平台提供对应的 AppID 完成登记；以支付宝付款无需登记。
+4. **测试**：测试用的商户编码与凭据向平台申请。
+
+## 请求与响应约定
+
+### 参数位置
+
+参数分三类：路径变量（如 `{partner_code}`、`{order_id}`）、查询参数（`?` 之后的 `key=value`，签名三要素也在这里），以及 JSON 请求体（只用于 PUT / POST）。
+
+### 响应
+
+- 接口请求到达平台后，无论业务成败均返回 HTTP 200 与 JSON（支付页为浏览器入口，不适用本条，见「支付页地址的签名」），结果以 `return_code` 为准：`SUCCESS` 表示调用成功，其他值为错误码，`return_msg` 给出说明。
+- 错误码可能扩展。商户系统应为未识别的错误码提供默认的失败处理分支。
+- 下单等接口在 `return_code` 为 `SUCCESS` 时另有 `result_code` 表示业务结果，例如订单已存在时为 `EXISTS`、付款码被扫处理中为 `PAYING`，取值见各接口。
+- 请求超时、网络中断或收到非 200 响应时，商户系统应按结果未知处理，调用订单查询（#5）、退款查询（#2）或合约查询（#40）确认，不直接判定失败。
+
+### 金额
+
+金额默认以币种的最小计价单位整数表示：对 CAD 这类两位小数的币种，`100` 表示 `1.00`。下列三处例外，**单位为元**（币种主单位小数，如 `10.50`）：
+
+| 接口 | 字段 | 单位 |
+|---|---|---|
+| 订单列表（#6） | 响应 `data[]` 与 `analysis` 中的全部金额 | 元（主单位小数） |
+| 卡支付预下单（#53） | 请求的 `amount` 与 `tipAmount` | 元（主单位小数） |
+| 支付成功通知（#47） | `clearing_amount` | 元（主单位小数） |
+
+### 幂等与重试
+
+- **下单**：商户订单号（路径 `{order_id}`；卡支付预下单为请求体中的 `merchantOrderId`）在同一商户下唯一。用同一订单号重复下单不会新建订单：订单已支付返回 `ORDER_PAID`，已关闭返回 `ORDER_CLOSED`，处理中或同一订单号并发下单返回 `DUPLICATE_ORDER_ID`；其余情形（含请求内容与首次下单不同）返回该单的既有结果（`result_code` 为 `EXISTS`），订单内容以首次下单为准。
+- **订单有效期**：未支付订单默认 5 分钟后失效，可在商户后台调整。以失效订单的订单号再次下单不会重新开单，重新收款应使用新的商户订单号。
+- **退款**：商户退款号（路径 `{refund_id}`）是退款的幂等键，在订单所属商户范围内唯一，一个退款号只对应一笔退款。以同一退款号重试不会重复退款，返回首次受理的结果，响应另带该退款当前的 `result_code`；退款号已用于其他订单，或金额与首次提交不一致，返回 `REFUND_MISMATCH`。退款失败后以新的退款号重新发起。
+- **委托代扣签约**：商户合约号（路径 `{contract_no}`）在同一商户下唯一，一个合约号只能提交一次签约。以同一合约号重复签约返回 `DUPLICATE_ORDER_ID`，不返回首次结果；签约未能发起或签约失败后，以新的合约号重新签约。
+- **委托代扣扣款**：扣款以商户订单号（路径 `{order_id}`）识别，一个订单号只对应一笔扣款。以同一订单号重复扣款不会重复扣款，按该订单当前状态返回：处理中为 `PAYING`，已支付返回 `ORDER_PAID`，已关闭或扣款未成功返回 `ORDER_CLOSED`；合约号、金额或币种与首次不一致，或该订单号已用于其他订单，返回 `PARAM_INVALID`。
+- **重试**：超时后重试应沿用同一订单号或退款号，签名三要素（`time`、`nonce_str`、`sign`）每次重新生成，见「时间窗与防重放」。
+
+## 签名
+
+每个请求均须携带签名三要素 `time`、`nonce_str`、`sign`，置于查询参数中。
+
+### 给请求签名
+
+1. 用 `&` 依次连接下列四个值，得到待签串。各值原样拼接，不做 URL 转义：
+
+   ```
+   partner_code&time&nonce_str&credential_code
+   ```
+
+   - `partner_code`：路径中的商户编码 `{partner_code}`。路径使用商户编码别名时，待签串仍填实际商户编码。
+   - `time`：当前 UTC 毫秒时间戳（13 位）。传入秒级时间戳时返回 `SIGN_TIMEOUT`。
+   - `nonce_str`：随机串，仅含 URL 安全字符，建议 10 到 30 位。
+   - `credential_code`：商户的凭据。
+2. 对待签串做 SHA-256，结果转为小写十六进制字符串，即 `sign`。
+3. 将 `time`、`nonce_str`、`sign` 作为查询参数附在请求地址上，顺序不限。
+
+### 示例
+
+```
+待签串：TestPay&1468691301081&aaf2a94c8c2d56d5b43a1a3d9d811102&pQ5Jc9eoTcsxqPY5uQ3p2WmvSy0zEYeP
+sign：  1c35fc7ca2014babf2ddc5b613610fd2d07986a8d258538d1fc9998bd2dad876
+```
+
+附上三要素后的请求（以订单查询为例，`{host}` 为平台提供的接入域名）：
+
+```
+GET https://{host}/api/v1.0/gateway/partners/TestPay/orders/TP201607160001?time=1468691301081&nonce_str=aaf2a94c8c2d56d5b43a1a3d9d811102&sign=1c35fc7ca2014babf2ddc5b613610fd2d07986a8d258538d1fc9998bd2dad876
+```
+
+### 时间窗与防重放
+
+- `time` 与平台时间相差须小于 5 分钟，否则返回 `SIGN_TIMEOUT`。商户服务器应保持时钟同步。
+- 同一商户的同一组 `time` + `nonce_str` 在首次使用时与所请求的地址绑定。调用接口时，同一组要素只受理一次，再次使用返回 `SIGN_EXPIRED`；每个请求（含重试）均应重新生成三要素。
+- 支付页地址可用同一组要素在时间窗内重复打开（付款人刷新页面或返回）。为支付页生成的这组要素用于其他地址或任一接口时，返回 `SIGN_EXPIRED`。
+- 平台的同步响应不带签名，无需验签。通知的验签见「通知处理」。
+
+### 支付页地址的签名
+
+下单响应中的 `pay_url` 是供付款人浏览器打开的支付页地址。商户系统在跳转前于该地址上追加：
+
+- `time`、`nonce_str`、`sign`：按上述算法为本次跳转新生成；
+- `redirect`：付款流程结束后浏览器跳回的商户页面地址，须 URL 编码；
+- 微信与支付宝 JSAPI 支付页另可追加 `directpay`。
+
+地址中已含 `?` 时，以 `&` 继续追加。示例：
+
+```
+待签串：TestPay&1468691305620&7d1c3f0a9b2e4c6d8f0a1b3c5d7e9f21&pQ5Jc9eoTcsxqPY5uQ3p2WmvSy0zEYeP
+sign：  202d130b0bccb102f8fc3ccc76da7086d6337990f591d9b30cbf67c907b6cbd9
+
+https://{host}/api/v1.0/gateway/partners/TestPay/orders/TP201607160001/pay?redirect=https%3A%2F%2Fshop.example.com%2Fpaid%3Forder_id%3DTP201607160001&time=1468691305620&nonce_str=7d1c3f0a9b2e4c6d8f0a1b3c5d7e9f21&sign=202d130b0bccb102f8fc3ccc76da7086d6337990f591d9b30cbf67c907b6cbd9
+```
+
+付款人在支付页完成付款后，浏览器按 `redirect` 跳回商户页面。跳回不代表支付成功，商户系统应在跳回页调用订单查询（#5）确认结果。
+
+卡支付收银台（#52）的地址由卡支付预下单（#53）返回，商户照原样打开，可在其上追加 `redirect`，无需追加签名三要素；付款成功后浏览器按 `redirect` 跳回，支付结果以订单查询（#5）为准。
+
+## 接口
+
+下表的编号在本文所有时序图中固定不变。路径从 `/api/v1.0` 之后写起（#52、#53 的地址见「概览」）；#47 到 #49 为平台调用商户的 `notify_url`。
+
+| # | 流程 | operationId | 方法与路径 | 用途 |
+|---|---|---|---|---|
+| 1 | 退款与退款通知 | [`createRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/createRefund) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}` | 对已支付订单发起退款，商户退款号即幂等键 |
+| 2 | 退款与退款通知 | [`getRefund`](../api-v1.0-gateway/index.html#tag/refund/operation/getRefund) | `GET /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}` | 查询退款状态 |
+| 3 | 关单 | [`cancelOrder`](../api-v1.0-gateway/index.html#tag/cancel/operation/cancelOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/cancel` | 关闭未支付订单 |
+| 5 | 结果确认（通知 + 查询） | [`getOrder`](../api-v1.0-gateway/index.html#tag/order/operation/getOrder) | `GET /gateway/partners/{partner_code}/orders/{order_id}` | 按商户订单号查询订单 |
+| 6 | 对账 | [`listOrders`](../api-v1.0-gateway/index.html#tag/order/operation/listOrders) | `GET /gateway/partners/{partner_code}/orders` | 按日期、状态、支付方式分页查询订单 |
+| 7 | 对账 | [`listTransactions`](../api-v1.0-gateway/index.html#tag/transaction/operation/listTransactions) | `GET /gateway/partners/{partner_code}/transactions` | 按日查询交易流水，可分页 |
+| 8 | 对账 | [`listSettlements`](../api-v1.0-gateway/index.html#tag/settlement/operation/listSettlements) | `GET /gateway/partners/{partner_code}/settlements` | 按结算日查询结算记录（不能查当天） |
+| 9 | 对账 | [`getExchangeRate`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getExchangeRate) | `GET /gateway/partners/{partner_code}/exchange_rate` | 查询微信汇率 |
+| 10 | 对账 | [`getChannelExchangeRates`](../api-v1.0-gateway/index.html#tag/exchange-rate/operation/getChannelExchangeRates) | `GET /gateway/partners/{partner_code}/channel_exchange_rate` | 按支付方式查询当前汇率 |
+| 11 | 预授权 | [`preauthorizeOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/preauthorizeOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/settle_lock` | 将已支付订单转为预授权订单，暂不结算 |
+| 12 | 预授权 | [`releasePreauthorizedOrder`](../api-v1.0-gateway/index.html#tag/preauth/operation/releasePreauthorizedOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}/release_settle_lock` | 释放预授权，订单恢复结算 |
+| 17 | 跳转支付页 | [`createQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createQrcodeOrder) | `PUT /gateway/partners/{partner_code}/orders/{order_id}` | 扫码下单：返回二维码与支付页地址 |
+| 18 | 在钱包或 App 内拉起 | [`createAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAppOrder) | `PUT /gateway/partners/{partner_code}/app_orders/{order_id}` | App 下单：返回交给钱包 SDK 的参数 |
+| 19 | 自行展示二维码 | [`createNativeQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createNativeQrcodeOrder) | `PUT /gateway/partners/{partner_code}/native_orders/{order_id}` | 原生二维码下单：返回二维码内容，由商户展示 |
+| 20 | 跳转支付页 | [`createUnionpayOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createUnionpayOnlineOrder) | `PUT /gateway/partners/{partner_code}/pre_card_orders/{order_id}` | 银联在线下单：返回银联卡号支付页地址 |
+| 21 | 在钱包或 App 内拉起 | [`createNativeJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createNativeJsapiOrder) | `PUT /gateway/partners/{partner_code}/native_jsapi/{order_id}` | 原生 JSAPI 下单：返回在钱包内调起支付的参数 |
+| 22 | 在钱包或 App 内拉起 | [`createMiniProgramOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createMiniProgramOrder) | `PUT /gateway/partners/{partner_code}/microapp_orders/{order_id}` | 小程序下单：返回小程序支付参数 |
+| 24 | 跳转支付页 | [`createH5Order`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createH5Order) | `PUT /h5_payment/partners/{partner_code}/orders/{order_id}` | H5 下单：返回在手机浏览器里打开的支付页地址 |
+| 25 | 跳转支付页 | [`createJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createJsapiOrder) | `PUT /jsapi_gateway/partners/{partner_code}/orders/{order_id}` | JSAPI 下单：返回在微信或支付宝内打开的支付页地址 |
+| 26 | 跳转支付页 | [`createOnlineOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createOnlineOrder) | `PUT /web_gateway/partners/{partner_code}/orders/{order_id}` | 银联或支付宝 Online 下单：返回支付页地址 |
+| 27 | 付款码收款 | [`createMicropayOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createMicropayOrder) | `PUT /micropay/partners/{partner_code}/orders/{order_id}` | 扫顾客出示的付款码完成收款 |
+| 28 | 自行展示二维码 | [`createRetailQrcodeOrder`](../api-v1.0-gateway/index.html#tag/placing-retail/operation/createRetailQrcodeOrder) | `PUT /retail_qrcode/partners/{partner_code}/orders/{order_id}` | 门店扫码下单：收银设备展示二维码给顾客扫 |
+| 29 | 在钱包或 App 内拉起 | [`createAlipayAppOrder`](../api-v1.0-gateway/index.html#tag/placing-app/operation/createAlipayAppOrder) | `PUT /alipay/partners/{partner_code}/app_orders/{order_id}` | 支付宝 App 下单 |
+| 30 | 跳转支付页 | [`createAlipayGatewayOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayGatewayOrder) | `PUT /alipay/partners/{partner_code}/orders/{order_id}` | 支付宝网关下单 |
+| 31 | 跳转支付页 | [`createAlipayPlusOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createAlipayPlusOrder) | `PUT /alipay_plus/partners/{partner_code}/orders/{order_id}` | Alipay+ 下单 |
+| 32 | 跳转支付页 | [`createWechatJsapiOrder`](../api-v1.0-gateway/index.html#tag/placing-wallet-web/operation/createWechatJsapiOrder) | `PUT /wechat_jsapi_gateway/partners/{partner_code}/orders/{order_id}` | 微信 JSAPI 下单 |
+| 53 | 跳转支付页 | [`createCardOrder`](../api-v1.0-gateway/index.html#tag/placing-browser/operation/createCardOrder) | `POST /pay/thirdCard/{partner_code}/preOrder` | 卡支付预下单：返回卡支付收银台地址；接口地址见「概览」 |
+| 33 | 跳转支付页 | [`openQrcodePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openQrcodePaymentPage) | `GET /gateway/partners/{partner_code}/orders/{order_id}/pay` | 扫码支付页 |
+| 34 | 跳转支付页 | [`openWechatJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openWechatJsapiPaymentPage) | `GET /wechat_jsapi_gateway/partners/{partner_code}_order_{order_id}` | 微信 JSAPI 支付页 |
+| 35 | 跳转支付页 | [`openAlipayJsapiPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayJsapiPaymentPage) | `GET /gateway/alipay/partners/{partner_code}/orders/{order_id}/app_pay` | 支付宝 JSAPI 支付页 |
+| 36 | 跳转支付页 | [`openH5PaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openH5PaymentPage) | `GET /h5_payment/partners/{partner_code}/orders/{order_id}/pay` | H5 支付页 |
+| 37 | 跳转支付页 | [`openAlipayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayOnlinePaymentPage) | `GET /alipay/partners/{partner_code}/orders/{order_id}/web_pay` | 支付宝 Online 支付页 |
+| 38 | 跳转支付页 | [`openUnionpayOnlinePaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayOnlinePaymentPage) | `GET /web_gateway/partners/{partner_code}/orders/{order_id}/pay` | 银联 Online 支付页 |
+| 50 | 跳转支付页 | [`openAlipayPlusWebPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusWebPaymentPage) | `GET /alipay_plus/partners/{partner_code}/orders/{order_id}/web_pay` | Alipay+ 网页支付页 |
+| 51 | 跳转支付页 | [`openAlipayPlusAppPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openAlipayPlusAppPaymentPage) | `GET /alipay_plus/partners/{partner_code}/orders/{order_id}/app_pay` | Alipay+ 移动端支付页 |
+| 52 | 跳转支付页 | [`openCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openCardPaymentPage) | `GET /creditCardGateway` | 卡支付收银台，地址由卡支付预下单（#53）返回 |
+| 54 | 跳转支付页 | [`openUnionpayCardPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openUnionpayCardPaymentPage) | `GET /card_payment_view/partners/{partner_code}/orders/{order_id}/view` | 银联卡号支付页，付款人在页内输入银联卡信息 |
+| 55 | 跳转支付页 | [`openHostedPaymentPage`](../api-v1.0-gateway/index.html#tag/payment-page/operation/openHostedPaymentPage) | `GET /payment/common/partners/{partner_code}/orders/{platform_order_id}/web_form` | 托管支付页，由平台引导付款人完成支付 |
+| 39 | 委托代扣 | [`createAutodebitAppContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitAppContract) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}` | App 签约：返回在商户 App 内调起渠道签约的参数 |
+| 40 | 委托代扣 | [`getAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/getAutodebitContract) | `GET /auto_debit/partners/{partner_code}/contract/{contract_no}` | 合约查询：返回合约状态 |
+| 41 | 委托代扣 | [`createAutodebitH5Contract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/createAutodebitH5Contract) | `POST /auto_debit/partners/{partner_code}/contract/h5/{contract_no}` | H5 签约：返回签约页地址 |
+| 42 | 委托代扣 | [`payAutodebitOrder`](../api-v1.0-gateway/index.html#tag/autodebit/operation/payAutodebitOrder) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}/orders/{order_id}/pay` | 扣款：按已签约的合约发起扣款，付款人无需确认 |
+| 43 | 委托代扣 | [`terminateAutodebitContract`](../api-v1.0-gateway/index.html#tag/autodebit/operation/terminateAutodebitContract) | `POST /auto_debit/partners/{partner_code}/contract/{contract_no}/terminate` | 解约：解约后合约不再受理扣款 |
+| 47 | 结果确认（通知 + 查询） | [`onPaymentSucceeded`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onPaymentSucceeded) | `POST {notify_url}` | 支付成功通知 |
+| 48 | 退款与退款通知 | [`onRefundResult`](../api-v1.0-gateway-webhook/index.html#tag/payment-notify/operation/onRefundResult) | `POST {notify_url}` | 退款通知 |
+| 49 | 委托代扣 | [`onAutodebitContractStatusChanged`](../api-v1.0-gateway-webhook/index.html#tag/autodebit-notify/operation/onAutodebitContractStatusChanged) | `POST {notify_url}` | 代扣签约状态通知 |
+
+## 通知处理
+
+商户在下单、扣款、退款或签约请求中传入 `notify_url` 时，平台在下列时机向该地址 POST 一个 JSON；下单、扣款或退款请求未传入，或 `notify_url` 为非公网可达的地址时，不推送。
+
+| 通知 | 推送时机 | 幂等键 | 商户的成功应答 |
+|---|---|---|---|
+| 支付成功通知（#47） | 订单支付成功，每笔订单一条 | `order_id`（平台订单号） | 任意 2xx |
+| 退款通知（#48） | 退款被渠道受理，每笔退款一条 | `refund_id`（平台退款号） | 任意 2xx |
+| 代扣签约状态通知（#49） | 签约成功、签约失败、解约 | `data` 中的 `clientContractNo` 与 `state` | 响应体顶层 `code` 为 `SUCCESS` |
+
+- 支付成功通知只在订单支付成功时推送；支付失败或未支付即关闭的订单不推送。
+- 退款通知的地址取自退款请求中的 `notify_url`。通知中的 `result_code` 为 `SUCCESS`，表示退款已被渠道受理，款项未必已退回付款人；退款未被受理（含审核未通过）或受理后失败时不推送，退款结果以退款查询（#2）为准。
+- 扣款成功的通知即支付成功通知（#47），地址取自扣款请求中的 `notify_url`；代扣签约状态通知的地址取自签约请求中的 `notify_url`。
+- 签约成功的通知在付款人完成授权后推送。签约未能发起、付款人未在签约有效期内完成授权，以及合约有效期届满时，平台不推送通知；这三种情形合约查询均为 `SIGNFAIL`。
+- 代扣签约状态通知的 `data` 为 JSON 字符串，商户系统先反序列化，再读取 `clientContractNo`、`state` 等字段。
+
+### 验签
+
+按「签名」一节的算法，用通知 body 中的 `time`、`nonce_str` 与商户编码、凭据重算 `sign`，与 body 中的 `sign` 比对；验签不通过的通知不返回成功应答。平台重置商户凭据后，通知改用新凭据签名。
+
+### 应答
+
+- 支付成功通知与退款通知：返回任意 2xx 即视为送达，平台不读取响应体。
+- 代扣签约状态通知：响应体顶层 `code` 为 `SUCCESS`（大小写不敏感）即视为送达，例如 `{"code":"SUCCESS"}`。
+
+商户系统收到通知、验签通过并记录后返回成功应答，再以查询结果处理商户系统中的订单或合约。
+
+### 重复与重试
+
+- 通知按至少一次送达，同一条通知可能多次送达，以上表的幂等键识别；重复送达的通知同样返回成功应答。
+- 未收到成功应答时，平台在约 24 小时内按递增间隔重试：支付通知自付款成功起算，退款通知自退款被受理起算，代扣签约状态通知自合约状态变化起算。
+- 支付成功通知与退款通知的通知地址返回 307 或 308 跳转时，平台按原报文向跳转后的地址重发；返回其他跳转时视为未送达。代扣签约状态通知的通知地址返回任何跳转时均视为未送达。
+- 未收到通知时，以订单查询（#5）、退款查询（#2）或合约查询（#40）的结果为准。
+
+## 流程：跳转支付页
+
+商户下单后把付款人带到平台支付页，付款结束后浏览器按 `redirect` 跳回商户页面（卡支付收银台仅在付款成功后跳回）。`pay_url` 指向哪一个支付页以下单响应为准，商户系统照返回的地址跳转。
+
+### 扫码支付页
+
+适用扫码下单（#17）。响应同时返回支付页地址与二维码：商户系统可把浏览器带到平台扫码支付页（#33），也可在自己的页面上展示二维码，图中以分支表示。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在商户页面提交订单
+    M->>A: #35;17 [createQrcodeOrder]<br/>PUT /gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: result_code 为 SUCCESS<br/>{ pay_url, code_url, qrcode_img }
+    alt 跳转平台扫码支付页
+        M-->>U: 浏览器跳转 pay_url<br/>地址上追加 time、nonce_str、sign、redirect
+        U->>A: #35;33 [openQrcodePaymentPage]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}/pay
+        A-->>U: 扫码支付页，展示二维码
+    else 商户页面展示二维码
+        M-->>U: 展示 qrcode_img，或以 code_url 生成的二维码
+    end
+    U->>C: 用钱包扫码并确认付款
+    C-->>A: 付款结果
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    opt 经平台扫码支付页付款
+        A-->>U: 浏览器按 redirect 跳回商户页面
+        U->>M: 打开跳回页
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #17 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不展示二维码与支付页，需要重新收款时以新的商户订单号下单 |
+| 付款人未付款即离开，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### H5 支付页
+
+适用 H5 下单（#24）。付款人在手机浏览器或 App 内的 WebView 中打开 H5 支付页（#36），由支付页带往渠道完成付款；支付流程结束后，无论付款成功与否，浏览器均按 `redirect` 跳回。以银联下单时，`pay_url` 指向银联 Online 支付页（#38）或托管支付页（#55），后续步骤分别见「支付宝与银联 Online 支付页」与「托管支付页」。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在手机上提交订单
+    M->>A: #35;24 [createH5Order]<br/>PUT /h5_payment/partners/{partner_code}/orders/{order_id}
+    A-->>M: result_code 为 SUCCESS<br/>{ pay_url }
+    M-->>U: 浏览器跳转 pay_url<br/>地址上追加 time、nonce_str、sign、redirect
+    U->>A: #35;36 [openH5PaymentPage]<br/>GET /h5_payment/partners/{partner_code}/orders/{order_id}/pay
+    A-->>U: 带往渠道页面，或调起钱包 App
+    U->>C: 确认付款
+    C-->>A: 付款结果
+    A-->>U: 浏览器按 redirect 跳回商户页面
+    U->>M: 打开跳回页
+    M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: { result_code }
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #24 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不跳转支付页，需要重新收款时以新的商户订单号下单 |
+| 付款人在渠道页面取消付款，或订单超过有效期未付款 | 浏览器跳回后查询到的订单不是已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### 支付宝与银联 Online 支付页
+
+适用 Online 下单（#26）与支付宝网关下单（#30）。`pay_url` 按请求中的 `channel` 指向支付宝 Online 支付页（#37）或银联 Online 支付页（#38），付款人在渠道的官方页面上扫码或登录账户完成付款；#30 省略 `channel` 时按支付宝处理，返回的支付页与 #26 相同。#26 选择银联时，`pay_url` 也可能指向托管支付页（#55），见「托管支付页」。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在 PC 网站提交订单
+    M->>A: #35;26 [createOnlineOrder]<br/>PUT /web_gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: result_code 为 SUCCESS<br/>{ pay_url }
+    M-->>U: 浏览器跳转 pay_url<br/>地址上追加 time、nonce_str、sign、redirect
+    alt channel 为支付宝
+        U->>A: #35;37 [openAlipayOnlinePaymentPage]<br/>GET /alipay/partners/{partner_code}/orders/{order_id}/web_pay
+    else channel 为银联
+        U->>A: #35;38 [openUnionpayOnlinePaymentPage]<br/>GET /web_gateway/partners/{partner_code}/orders/{order_id}/pay
+    end
+    A-->>U: 带往支付宝或银联官方页面
+    U->>C: 扫码或登录账户付款
+    C-->>A: 付款结果
+    A-->>U: 浏览器按 redirect 跳回商户页面
+    U->>M: 打开跳回页
+    M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: { result_code }
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #26 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不跳转支付页，需要重新收款时以新的商户订单号下单 |
+| 付款人在渠道页面放弃付款，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### JSAPI 支付页
+
+适用 JSAPI 下单（#25），只能在微信或支付宝内打开的网页中使用。`pay_url` 按支付方式指向微信 JSAPI 支付页（#34）或支付宝 JSAPI 支付页（#35）；微信 JSAPI 下单（#32）返回的 `pay_url` 指向 #34，后续步骤相同。支付流程结束后，无论付款成功与否，浏览器均按 `redirect` 跳回。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在微信或支付宝内的商户网页提交订单
+    M->>A: #35;25 [createJsapiOrder]<br/>PUT /jsapi_gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: result_code 为 SUCCESS<br/>{ pay_url }
+    M-->>U: 浏览器跳转 pay_url<br/>地址上追加 time、nonce_str、sign、redirect，可另加 directpay
+    alt 微信
+        U->>A: #35;34 [openWechatJsapiPaymentPage]<br/>GET /wechat_jsapi_gateway/partners/{partner_code}_order_{order_id}
+    else 支付宝
+        U->>A: #35;35 [openAlipayJsapiPaymentPage]<br/>GET /gateway/alipay/partners/{partner_code}/orders/{order_id}/app_pay
+    end
+    A-->>U: 支付页在钱包内调起支付
+    U->>C: 确认付款
+    C-->>A: 付款结果
+    A-->>U: 浏览器按 redirect 跳回商户页面
+    U->>M: 打开跳回页
+    M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: { result_code }
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #25 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不跳转支付页，需要重新收款时以新的商户订单号下单 |
+| 付款人在钱包内取消付款，或订单超过有效期未付款 | 浏览器跳回后查询到的订单不是已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### Alipay+ 支付页
+
+适用 Alipay+ 下单（#31）。`pay_url` 指向 Alipay+ 网页支付页（#50）或移动端支付页（#51），以下单响应为准；付款后浏览器按 `redirect` 跳回。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在商户页面提交订单
+    M->>A: #35;31 [createAlipayPlusOrder]<br/>PUT /alipay_plus/partners/{partner_code}/orders/{order_id}
+    A-->>M: result_code 为 SUCCESS<br/>{ pay_url }
+    M-->>U: 浏览器跳转 pay_url<br/>地址上追加 time、nonce_str、sign、redirect
+    alt pay_url 为网页支付页
+        U->>A: #35;50 [openAlipayPlusWebPaymentPage]<br/>GET /alipay_plus/partners/{partner_code}/orders/{order_id}/web_pay
+    else pay_url 为移动端支付页
+        U->>A: #35;51 [openAlipayPlusAppPaymentPage]<br/>GET /alipay_plus/partners/{partner_code}/orders/{order_id}/app_pay
+    end
+    A-->>U: 带往 Alipay+ 钱包付款
+    U->>C: 确认付款
+    C-->>A: 付款结果
+    A-->>U: 浏览器按 redirect 跳回商户页面
+    U->>M: 打开跳回页
+    M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+    A-->>M: { result_code }
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #31 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不跳转支付页，需要重新收款时以新的商户订单号下单 |
+| 付款人在钱包内取消付款，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### 卡支付收银台与银联卡号支付页
+
+适用卡支付预下单（#53）与银联在线下单（#20），付款人在平台支付页内输入卡信息完成付款。卡支付预下单（#53）请求的 `amount` 与 `tipAmount` **单位为元**（主单位小数），与其他下单接口不同。
+
+- **卡支付预下单（#53）**：返回卡支付收银台（#52）的地址。商户系统照原样打开，可追加 `redirect`，无需追加签名三要素；付款成功后浏览器按 `redirect` 跳回。
+- **银联在线下单（#20）**：返回银联卡号支付页（#54）的地址，付款人在页内输入银联卡信息。跳转前可在地址上追加 `redirect`；该页无需签名。付款后浏览器按 `redirect` 跳回。
+
+两种方式的支付结果均以订单查询（#5）为准。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+
+    U->>M: 选择银行卡付款，提交订单
+    alt 银行卡
+        M->>A: #35;53 [createCardOrder]<br/>POST /pay/thirdCard/{partner_code}/preOrder
+        A-->>M: return_code 为 SUCCESS<br/>{ pay_url }
+        M-->>U: 浏览器照原样打开 pay_url，可追加 redirect
+        U->>A: #35;52 [openCardPaymentPage]<br/>GET /creditCardGateway
+    else 银联卡
+        M->>A: #35;20 [createUnionpayOnlineOrder]<br/>PUT /gateway/partners/{partner_code}/pre_card_orders/{order_id}
+        A-->>M: result_code 为 SUCCESS<br/>{ pay_url }
+        M-->>U: 浏览器跳转 pay_url<br/>地址上追加 redirect
+        U->>A: #35;54 [openUnionpayCardPaymentPage]<br/>GET /card_payment_view/partners/{partner_code}/orders/{order_id}/view
+    end
+    A-->>U: 支付页
+    U->>A: 输入卡信息，确认付款
+    A-->>U: 支付页显示付款结果
+    opt 已追加 redirect
+        A-->>U: 浏览器按 redirect 跳回商户页面
+        U->>M: 打开跳回页
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #53 或 #20 返回错误码，或 #20 返回 `result_code` 为 `CREATE_FAIL` | 按错误码处理，不打开支付页；需要重新收款时以新的商户订单号下单 |
+| 付款人未完成付款即离开，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单 |
+| 扣款被拒 | 订单不是已支付；以订单查询（#5）结果为准 |
+| 跳回页查询到的 `result_code` 不是 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` | 订单未支付；之后收到支付成功通知时，以订单查询（#5）的结果为准 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+### 托管支付页
+
+以 JSAPI 下单（#25）、原生 JSAPI 下单（#21）、门店扫码下单（#28），或以银联进行 H5 下单（#24）与 Online 下单（#26）时，返回的 `pay_url` 可指向托管支付页（#55）。是否返回本地址由商户开通的收单服务决定；商户系统按返回的 `pay_url` 跳转即可，无需区分。付款人打开该页后，由平台引导完成支付。跳转前可在地址上追加 `redirect`；该页无需签名。付款后浏览器按 `redirect` 跳回，跳回页调用订单查询（#5）确认结果；付款结果的通知与查询见「流程：结果确认（通知 + 查询）」。
+
+## 流程：自行展示二维码
+
+适用原生二维码下单（#19）与门店扫码下单（#28）。商户系统以返回的 `code_url` 生成二维码，或直接展示返回的 `qrcode_img`，付款人用钱包扫码付款；付款结果以订单查询的结果为准，支付成功通知用于触发查询。门店扫码下单（#28）指定银联时，响应可能返回 `pay_url`（银联卡号支付页 #54），后续步骤见「卡支付收银台与银联卡号支付页」。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    alt 原生二维码下单
+        U->>M: 在商户页面提交订单
+        M->>A: #35;19 [createNativeQrcodeOrder]<br/>PUT /gateway/partners/{partner_code}/native_orders/{order_id}
+        A-->>M: result_code 为 SUCCESS<br/>{ code_url, qrcode_img }
+        M-->>U: 商户页面展示二维码
+    else 门店扫码下单
+        U->>M: 在收银台结账
+        M->>A: #35;28 [createRetailQrcodeOrder]<br/>PUT /retail_qrcode/partners/{partner_code}/orders/{order_id}
+        A-->>M: result_code 为 SUCCESS<br/>{ code_url, qrcode_img }
+        M-->>U: 收银设备展示二维码
+    end
+    U->>C: 用钱包扫码并确认付款
+    C-->>A: 付款结果
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #19 或 #28 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不展示二维码，需要重新收款时以新的商户订单号下单 |
+| #28 指定银联，响应返回 `pay_url` | 把付款人带到 `pay_url`（银联卡号支付页 #54），后续步骤见「卡支付收银台与银联卡号支付页」 |
+| 付款人未扫码，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 展示二维码期间未收到支付成功通知 | 调用订单查询（#5）确认，直至订单已支付或已失效，见「流程：结果确认（通知 + 查询）」 |
+
+## 流程：在钱包或 App 内拉起
+
+适用原生 JSAPI 下单（#21，微信或支付宝内的网页）、App 下单（#18，商户 App）与小程序下单（#22）。下单响应的 `sdk_params` 原样交给钱包的 JSBridge、SDK 或小程序支付接口调起支付，形态随支付方式为 JSON 对象或字符串。支付宝 App 下单（#29）返回的 `sdk_params` 用法同 App 下单。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在钱包内网页、商户 App 或小程序中提交订单
+    alt 钱包内网页
+        M->>A: #35;21 [createNativeJsapiOrder]<br/>PUT /gateway/partners/{partner_code}/native_jsapi/{order_id}
+    else 商户 App
+        M->>A: #35;18 [createAppOrder]<br/>PUT /gateway/partners/{partner_code}/app_orders/{order_id}
+    else 小程序
+        M->>A: #35;22 [createMiniProgramOrder]<br/>PUT /gateway/partners/{partner_code}/microapp_orders/{order_id}
+    end
+    A-->>M: result_code 为 SUCCESS<br/>{ sdk_params }
+    M->>C: 以 sdk_params 调起支付<br/>JSBridge、钱包 SDK 或小程序支付接口
+    U->>C: 确认付款
+    C-->>M: 前端收到付款结果回调
+    C-->>A: 付款结果
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示付款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| 下单返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生支付；不调起支付，需要重新收款时以新的商户订单号下单 |
+| 前端回调为付款成功 | 以订单查询（#5）的结果为准，支付成功通知用于触发查询 |
+| 付款人取消付款，或订单超过有效期未付款 | 订单不会变为已支付；需要重新收款时以新的商户订单号下单，也可调用关单（#3）提前关闭 |
+| 未收到支付成功通知 | 调用订单查询（#5）确认，见「流程：结果确认（通知 + 查询）」 |
+
+## 流程：付款码收款
+
+适用付款码被扫（#27）。收银设备扫付款人出示的付款码后下单，支付方式由付款码自动识别。新建订单的响应 `result_code` 为 `PAYING`（已受理、处理中）；同步得出结果时为 `PAY_SUCCESS` 或 `PAY_FAIL`，各值含义见 API 参考。最终结果以订单查询（#5）的结果为准，支付成功通知用于触发查询。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 出示钱包付款码
+    M->>M: 收银设备扫码，得到 auth_code
+    M->>A: #35;27 [createMicropayOrder]<br/>PUT /micropay/partners/{partner_code}/orders/{order_id}<br/>请求体含 auth_code
+    A-->>M: result_code 为 PAYING<br/>同步得出结果时为 PAY_SUCCESS 或 PAY_FAIL
+    opt 钱包要求付款人确认
+        C-->>U: 提示输入密码或确认付款
+        U->>C: 确认付款
+    end
+    C-->>A: 付款结果
+    Note over M,A: 商户系统调用订单查询（#35;5）直至订单为终态<br/>支付成功通知（#35;47）见「流程：结果确认（通知 + 查询）」
+    M-->>U: 展示收款结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #27 同步返回 `PAY_SUCCESS` | 付款已成功；以订单查询（#5）的结果为准，支付成功通知用于触发查询 |
+| #27 或订单查询返回 `CREATE_FAIL`、`PAY_FAIL` 或 `CLOSED` | 收款不成功；可请付款人更换付款方式或刷新付款码，以新的商户订单号重新收款 |
+| 订单查询持续为 `PAYING`，超过收银等待时限 | 调用关单（#3）关闭订单，不再等待该笔付款；关单返回 `ORDER_PAID` 时订单已支付，需要退还款项时调用退款（#1） |
+| #27 请求超时、网络中断或收到非 200 响应 | 按结果未知处理，调用订单查询（#5）确认，不直接判定失败 |
+
+## 流程：结果确认（通知 + 查询）
+
+各场景共用。订单支付成功后，平台向下单时传入的 `notify_url` 推送支付成功通知（#47）；商户系统验签、应答后调用订单查询（#5），查询结果的 `result_code` 为 `PAY_SUCCESS`、`PARTIAL_REFUND` 或 `FULL_REFUND` 时订单已支付。未收到通知时，以订单查询的结果为准。支付成功通知（#47）的 `clearing_amount` **单位为元**（主单位小数），通知中其余金额为最小计价单位整数。
+
+```mermaid
+sequenceDiagram
+    participant M as 商户系统
+    participant A as 平台
+
+    Note over A: 订单支付成功
+    A->>M: #35;47 [onPaymentSucceeded]<br/>POST {notify_url}
+    alt 验签通过
+        M-->>A: 2xx
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    else 验签不通过
+        M-->>A: 非 2xx
+    end
+    Note over M,A: 未收到 2xx 时，平台自付款成功起约 24 小时内按递增间隔重试
+    opt 未收到通知
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| 下单时未传 `notify_url`，或 `notify_url` 为非公网可达的地址 | 平台不推送通知；以订单查询（#5）确认结果 |
+| 同一通知多次送达 | 以 `order_id`（平台订单号）识别；重复送达的通知同样返回 2xx |
+| 通知验签不通过 | 不返回成功应答；平台重置凭据后，后续重试的通知改用新凭据签名 |
+| 查询到的 `result_code` 为 `PARTIAL_REFUND` 或 `FULL_REFUND` | 订单已支付，其后已发生退款；退款情况以退款查询（#2）为准 |
+| 查询到的 `result_code` 为 `PAYING`、`CREATE_FAIL`、`CLOSED` 或 `PAY_FAIL` | 订单未支付，不作已支付处理 |
+| 未收到通知，或通知超过重试期仍未成功送达 | 以订单查询（#5）确认结果 |
+
+## 流程：关单
+
+关单（#3）关闭尚未支付的订单，订单关闭后不再接受支付。等待付款中的订单可以关单；订单已关闭、已失效或已失败时同样返回成功；订单已支付时返回 `ORDER_PAID`，需要退还款项时调用退款（#1）。
+
+```mermaid
+sequenceDiagram
+    participant M as 商户系统
+    participant A as 平台
+
+    M->>A: #35;3 [cancelOrder]<br/>PUT /gateway/partners/{partner_code}/orders/{order_id}/cancel
+    alt 订单未支付，或已关闭、已失效、已失败
+        A-->>M: return_code 为 SUCCESS<br/>{ result_code }
+    else 订单已支付
+        A-->>M: return_code 为 ORDER_PAID
+    else 其他错误码
+        A-->>M: return_code 为错误码
+    end
+    opt 核实订单
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| 订单等待付款中（订单查询为 `PAYING`） | 可以关单，关单后不再接受支付；付款人已在此前完成付款时，#3 返回 `ORDER_PAID` |
+| 订单已关闭、已失效或已失败 | #3 同样返回 `SUCCESS` |
+| #3 返回 `ORDER_PAID` | 订单已支付，不能关单；需要退还款项时调用退款（#1） |
+| #3 返回 `ORDER_NOT_EXIST` | 该商户下没有该订单 |
+| #3 返回 `ORDER_CANCEL_FAILED` | 关闭失败；调用订单查询（#5）确认订单状态后再处理 |
+| 付款码被扫等待超时 | 调用关单（#3），见「流程：付款码收款」 |
+| 请求超时或收到非 200 响应 | 按结果未知处理，调用订单查询（#5）确认订单状态 |
+
+## 流程：退款与退款通知
+
+商户系统以商户退款号（路径 `{refund_id}`）对已支付订单发起退款（#1）。一笔订单可多次退款，各次退款累计金额不超过订单的实际支付金额（订单查询的 `real_fee`），退款币种与原订单相同。退款号在订单所属商户范围内唯一，以同一商户退款号重复提交不会重复退款，返回首次受理的结果，响应另带该退款当前的 `result_code`；一个退款号只对应一笔退款，退款失败后以新的退款号重新发起。退款请求传入 `notify_url` 时，退款被渠道受理后平台推送退款通知（#48）；退款结果以退款查询（#2）为准。
+
+```mermaid
+sequenceDiagram
+    participant M as 商户系统
+    participant A as 平台
+
+    M->>A: #35;1 [createRefund]<br/>PUT /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}
+    alt 退款已创建
+        A-->>M: return_code 为 SUCCESS<br/>{ refund_id（平台退款号）, result_code }
+    else 需平台审核
+        A-->>M: return_code 为 REFUND_NEED_REVIEW
+        Note over M,A: 待平台审核<br/>以本次的商户退款号调用退款查询（#35;2）跟进
+    else 其他错误码
+        A-->>M: return_code 为错误码
+    end
+    opt 请求中传入 notify_url，且退款被渠道受理
+        A->>M: #35;48 [onRefundResult]<br/>POST {notify_url}
+        alt 验签通过
+            M-->>A: 2xx
+        else 验签不通过
+            M-->>A: 非 2xx
+        end
+        Note over M,A: 未收到 2xx 时，平台自退款被受理起约 24 小时内按递增间隔重试
+    end
+    M->>A: #35;2 [getRefund]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}/refunds/{refund_id}
+    A-->>M: { result_code }
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| `result_code` 为 `WAITING` | 退款已创建，处理中；稍后调用退款查询（#2） |
+| `result_code` 为 `SUCCESS` | 退款已提交渠道、等待确认，不表示款项已退回付款人；需要确认退回时稍后调用退款查询（#2） |
+| `result_code` 为 `FINISHED` | 款项已退回付款人 |
+| `result_code` 为 `FAILED` | 退款失败；需要再次退款时以新的商户退款号发起 |
+| `result_code` 为 `CREATE_FAILED` | 退款未能提交渠道（含审核未通过、审核被撤回、商户可用余额不足），退款未成功；需要再次退款时以新的商户退款号发起 |
+| #1 返回 `REFUND_NEED_REVIEW` | 退款待平台审核，尚未退款；以本次的商户退款号（路径 `{refund_id}`）调用退款查询（#2）跟进，审核期间为 `WAITING`，未通过或被撤回为 `CREATE_FAILED`；审核通过且退款被渠道受理后，请求中传入了 `notify_url` 时推送退款通知（#48） |
+| #1 返回 `REFUND_NOT_ENOUGH_BALANCE` | 商户可用余额不足，退款失败；补足余额后以新的商户退款号重新发起 |
+| 同一商户退款号（路径 `{refund_id}`）重复提交 | 不会重复退款，返回首次受理的结果，响应另带该退款当前的 `result_code`；首次因商户可用余额不足失败或进入审核的，返回该笔退款及其当前 `result_code`（如 `CREATE_FAILED`、`WAITING`） |
+| #1 返回 `REFUND_MISMATCH` | 该商户退款号已用于其他订单，或金额与首次提交不一致；核对退款号与金额，发起新的退款时使用新的商户退款号 |
+| #1 返回 `EXIST_PROCESSING_REFUND` | 该订单的前一笔退款仍在创建中；稍后重试，或调用退款查询（#2） |
+| #1 返回其他错误码 | 按错误码处理，取值见 API 参考 |
+| #1 请求超时或收到非 200 响应 | 按结果未知处理，以同一商户退款号重新提交或调用退款查询（#2）确认 |
+| 收到退款通知 | 通知中的 `result_code` 恒为 `SUCCESS`，表示退款已被渠道受理；`WAITING`、`CREATE_FAILED`、`FAILED`、`FINISHED`、`CHANGE` 不推送通知，以退款查询（#2）跟进 |
+| 收到退款通知后，退款查询变为 `FAILED` | 退款失败，以退款查询为准；平台不就这次变化推送通知 |
+| 同一退款通知多次送达 | 以 `refund_id`（平台退款号）识别；重复送达的通知同样返回 2xx |
+| 同一订单有多笔部分退款 | 每笔退款各推送一条通知，以 `refund_id`（平台退款号）区分 |
+| 通知验签不通过 | 不返回成功应答；平台重置凭据后，后续重试的通知改用新凭据签名 |
+| 退款通知早于该订单的支付成功通知到达 | 两类通知的到达先后无保证；订单状态以订单查询（#5）为准，退款状态以退款查询（#2）为准 |
+| 退款请求未传 `notify_url` 或其为非公网可达的地址，或退款未被受理 | 平台不推送退款通知；以退款查询（#2）确认结果 |
+| 退款不是经本 API 发起的（如在商户后台操作） | 平台不推送退款通知；可在交易流水（#7）中查看该笔退款 |
+
+## 流程：预授权
+
+预授权订单是支付成功但暂不结算的订单，商户释放预授权后进入结算。订单通过下列两种方式成为预授权订单：
+
+- **按预授权下单**：下单请求体中 `preauth` 为 `true`，订单支付成功后即为预授权订单。
+- **转为预授权**：对已支付、尚未进入结算的订单调用转为预授权接口（#11），将该订单整笔转为预授权订单。
+
+商户调用释放预授权（#12）后，订单恢复结算。订单支付状态以订单查询（#5）核实；订单列表（#6）的 `pre_authorization` 表示该订单是否预授权订单，释放后仍为 `true`。
+
+```mermaid
+sequenceDiagram
+    participant M as 商户系统
+    participant A as 平台
+
+    alt 按预授权下单
+        M->>A: 下单，请求体中 preauth 为 true<br/>下单接口见「支付场景与接入方式」
+        A-->>M: 下单结果
+        Note over M,A: 付款与结果确认见各下单场景的流程章节
+    else 转为预授权
+        Note over M,A: 订单已支付、尚未进入结算
+        M->>A: #35;11 [preauthorizeOrder]<br/>PUT /gateway/partners/{partner_code}/orders/{order_id}/settle_lock
+        A-->>M: return_code 为 SUCCESS<br/>{ result_code }
+    end
+    Note over A: 订单为预授权订单，暂不结算
+    opt 核实订单
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+    M->>A: #35;12 [releasePreauthorizedOrder]<br/>PUT /gateway/partners/{partner_code}/orders/{order_id}/release_settle_lock
+    A-->>M: return_code 为 SUCCESS<br/>{ result_code }
+    Note over A: 订单进入结算
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| 下单时 `preauth` 为 `true` 的订单支付成功 | 订单为预授权订单，款项暂不结算，直至商户释放预授权（#12） |
+| #11 返回 `ORDER_NOT_EXIST` | 订单不存在 |
+| #11 返回 `ORDER_NOT_PAID` | 订单尚未支付；转为预授权只适用于已支付的订单 |
+| #11 返回 `ORDER_LOCKED` | 订单已处于预授权中（尚未释放），或已进入结算；已进入结算的订单不能再转为预授权 |
+| 预授权订单释放前调用退款（#1） | 返回 `PRE_AUTH_ORDER`；先释放预授权（#12），再发起退款 |
+| #12 返回 `ORDER_NOT_EXIST` | 订单不存在 |
+| #12 返回 `ORDER_NOT_PAID` | 订单尚未支付 |
+| #12 返回 `NOT_PRE_AUTH_ORDER` | 订单不处于预授权中：不是预授权订单，或预授权已释放 |
+| 订单列表（#6）的 `pre_authorization` 为 `true` | 该订单是预授权订单；释放预授权后仍为 `true` |
+
+## 流程：委托代扣
+
+付款人授权后，由商户按合约发起扣款，扣款时无需付款人确认。商户先以商户合约号（路径 `{contract_no}`）发起签约，付款人在渠道内确认授权后合约生效，合约查询（#40）的 `result_code` 为 `SIGNED`；此后商户按合约扣款（#42），每次扣款使用新的商户订单号（路径 `{order_id}`）。签约有两种方式：App 签约（#39）在商户 App 内调起渠道签约，H5 签约（#41）把付款人带到签约页。商户合约号在同一商户下唯一，一个合约号只能签约一次。付款人须在签约有效期内完成授权，逾期未完成的合约不能扣款。
+
+签约成功、签约失败与解约经签约状态通知送达：平台向签约请求中的 `notify_url` 推送签约状态通知（#49），`data` 中的 `state` 为合约状态，`data` 的解析见「通知处理」。签约未能发起、付款人未在签约有效期内完成授权，以及合约有效期届满时不推送通知，合约状态以合约查询（#40）为准。扣款请求传入 `notify_url` 时，扣款成功后平台向该地址推送支付成功通知（#47）；扣款结果以订单查询（#5）为准。
+
+### App 签约
+
+适用 App 签约（#39）。响应的 `result_code` 为 `NOTSIGN`，`sdk_params` 含 `session_id`，商户 App 以它调起渠道签约。付款人确认授权后，平台推送签约状态通知（#49）；商户系统验签、应答后调用合约查询（#40），`result_code` 为 `SIGNED` 时合约生效，可以扣款。解约可由商户调用解约（#43）发起，也可由付款人在渠道内发起；商户解约后合约随即不再受理扣款。两种情况在解约完成后，平台均推送签约状态通知。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    Note over U,C: 签约
+    U->>M: 在商户 App 中开通代扣
+    M->>A: #35;39 [createAutodebitAppContract]<br/>POST /auto_debit/partners/{partner_code}/contract/{contract_no}
+    A-->>M: return_code 为 SUCCESS<br/>{ result_code 为 NOTSIGN, sdk_params }
+    M->>C: 以 sdk_params 中的 session_id 调起渠道签约
+    U->>C: 付款人在渠道内确认授权
+    C-->>A: 授权结果
+    A->>M: #35;49 [onAutodebitContractStatusChanged]<br/>POST {notify_url}<br/>data 中 state 为 SIGNED
+    alt 验签通过
+        M-->>A: 响应体 code 为 SUCCESS
+    else 验签不通过
+        M-->>A: 不返回成功应答
+    end
+    M->>A: #35;40 [getAutodebitContract]<br/>GET /auto_debit/partners/{partner_code}/contract/{contract_no}
+    A-->>M: { result_code 为 SIGNED }
+
+    Note over M,A: 扣款（合约为 SIGNED 后按需发起，每次使用新的商户订单号）
+    M->>A: #35;42 [payAutodebitOrder]<br/>POST /auto_debit/partners/{partner_code}/contract/{contract_no}/orders/{order_id}/pay
+    A-->>M: return_code 为 SUCCESS<br/>{ result_code 为 PAYING }
+    C-->>A: 扣款结果
+    Note over M,A: 支付成功通知（#35;47）与订单查询（#35;5）<br/>见「流程：结果确认（通知 + 查询）」
+
+    Note over U,C: 解约
+    alt 商户解约
+        M->>A: #35;43 [terminateAutodebitContract]<br/>POST /auto_debit/partners/{partner_code}/contract/{contract_no}/terminate
+        A-->>M: return_code 为 SUCCESS
+        Note over M,A: 合约随即不再受理扣款
+    else 付款人在渠道内解约
+        U->>C: 付款人在渠道内解除授权
+    end
+    C-->>A: 解约结果
+    A->>M: #35;49 [onAutodebitContractStatusChanged]<br/>POST {notify_url}<br/>data 中 state 为 TERMINATED
+    M-->>A: 响应体 code 为 SUCCESS
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #39 或 #41 返回 `DUPLICATE_ORDER_ID` | 该合约号已签约过，平台不返回原签约结果、也不覆盖原合约；重新签约时使用新的合约号 |
+| #39 请求超时或收到非 200 响应 | 按结果未知处理，以同一合约号调用合约查询（#40）：`result_code` 为 `NOTSIGN` 且响应带 `sdk_params` 时，以其调起签约；为 `SIGNFAIL`（含签约未能发起）或返回 `CONTRACT_NOT_EXIST` 时，以新的合约号重新签约 |
+| #39 返回其他错误码 | 签约未发起，平台不推送签约状态通知；按错误码处理，取值见 API 参考；重新签约时使用新的合约号 |
+| 合约查询为 `NOTSIGN` 或 `SIGNING` | 付款人尚未完成授权；稍后再次查询，收到签约状态通知时同样以合约查询（#40）的结果为准 |
+| 签约状态通知的 `state` 或合约查询为 `SIGNFAIL` | 签约失败、签约未能发起、付款人未在签约有效期内完成授权，或合约有效期已届满（后三种情形平台不推送通知，以合约查询确认）；该合约不能扣款，重新签约时使用新的合约号 |
+| 签约后未收到签约状态通知 | 签约成功的通知在付款人完成授权后推送；需要即时结果时调用合约查询（#40） |
+| 签约请求的 `notify_url` 为非公网可达的地址 | 平台不推送签约状态通知；以合约查询（#40）确认合约状态 |
+| 同一签约状态通知多次送达 | 以 `data` 中的 `clientContractNo` 与 `state` 识别；重复送达的通知同样返回成功应答 |
+| 通知验签不通过 | 不返回成功应答；平台重置凭据后，后续重试的通知改用新凭据签名 |
+| #42 返回 `CONTRACT_NOT_EXIST` | 该商户下没有该合约，或合约当前不可用于扣款（合约查询不为 `SIGNED`）；不发生扣款、不建立订单 |
+| #42 返回 `result_code` 为 `CREATE_FAIL` | 订单已建立但不会发生扣款；需要再次扣款时使用新的商户订单号 |
+| 以同一商户订单号（路径 `{order_id}`）重复调用 #42，订单处理中 | 不会重复扣款，返回 `return_code` 为 `SUCCESS`、`result_code` 为 `PAYING`；以订单查询（#5）确认结果 |
+| #42 返回 `ORDER_CLOSED` | 该商户订单号的订单已关闭或扣款未成功，不会再扣款；需要再次扣款时使用新的商户订单号 |
+| #42 返回 `ORDER_PAID` | 该商户订单号的订单已支付，不会重复扣款；以订单查询（#5）核实 |
+| 以同一商户订单号重复调用 #42，合约号、金额或币种与首次不一致，或该订单号已用于其他订单 | 返回 `PARAM_INVALID`，不发生扣款；发起新的扣款时使用新的商户订单号 |
+| #42 请求超时或收到非 200 响应 | 按结果未知处理，以同一商户订单号与相同参数重新提交，或调用订单查询（#5）确认 |
+| 订单查询为 `PAY_FAIL` | 扣款被渠道拒绝，未成功，原因见订单查询的 `channel_error_code` 与 `channel_error_message`；需要再次扣款时使用新的商户订单号 |
+| 扣款请求未传 `notify_url`，或其为非公网可达的地址 | 平台不推送支付成功通知；以订单查询（#5）确认扣款结果 |
+| #42 返回其他错误码 | 按错误码处理，取值见 API 参考 |
+| 合约查询为 `TERMINATING` | 商户已解约，合约不再受理扣款；解约完成后合约查询为 `TERMINATED`，平台推送签约状态通知 |
+| #43 返回 `SUCCESS` 后调用 #42 | 返回 `CONTRACT_NOT_EXIST`，不发生扣款；解约前已受理的扣款照常处理，结果以订单查询（#5）为准 |
+| 付款人在渠道内解约 | 平台推送签约状态通知，`state` 为 `TERMINATED`；此后扣款返回 `CONTRACT_NOT_EXIST` |
+| 合约查询为 `NOTSIGN` 时调用 #43 | 返回 `SUCCESS`，合约随即终止，之后合约查询为 `TERMINATED`，平台不推送签约状态通知；需要代扣时以新的合约号重新签约 |
+| 合约查询为 `TERMINATING`、`TERMINATED` 或 `SIGNFAIL` 时调用 #43 | 返回 `SUCCESS`，合约状态不变 |
+| #43 返回 `CONTRACT_NOT_EXIST` | 该商户下没有该合约 |
+| #43 请求超时或收到非 200 响应 | 按结果未知处理，以同一合约号重新调用 #43，或调用合约查询（#40）确认 |
+| #43 返回其他错误码 | 按错误码处理；以合约查询（#40）确认合约状态 |
+
+### H5 签约
+
+适用 H5 签约（#41）。响应返回签约页地址 `signUrl`，商户把付款人的浏览器带到该地址，付款人在渠道内确认授权；签约请求传入 `return_url` 时，签约结束后浏览器返回该页面。返回商户页面不代表签约成功，合约状态以合约查询（#40）的结果为准，签约状态通知（#49）用于触发查询。签约生效后的扣款与解约同「App 签约」。
+
+```mermaid
+sequenceDiagram
+    actor U as 付款人
+    participant M as 商户系统
+    participant A as 平台
+    participant C as 渠道
+
+    U->>M: 在手机浏览器中开通代扣
+    M->>A: #35;41 [createAutodebitH5Contract]<br/>POST /auto_debit/partners/{partner_code}/contract/h5/{contract_no}
+    A-->>M: { signUrl }
+    M-->>U: 浏览器跳转 signUrl
+    U->>C: 付款人在渠道内确认授权
+    C-->>A: 授权结果
+    opt 签约请求中传入 return_url
+        C-->>U: 浏览器按 return_url 返回商户页面
+        U->>M: 打开返回页
+        M->>A: #35;40 [getAutodebitContract]<br/>GET /auto_debit/partners/{partner_code}/contract/{contract_no}
+        A-->>M: { result_code }
+    end
+    Note over M,A: 签约状态通知（#35;49）、扣款与解约<br/>同「App 签约」
+    M-->>U: 展示签约结果
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| #41 响应的 `code` 有值、未返回 `signUrl` | 签约页未生成，签约未发起，平台不推送签约状态通知；按 `code` 与 `message` 处理，重新签约时使用新的合约号 |
+| #41 返回 `return_code` 为错误码 | 同「App 签约」中 #39 的对应情形 |
+| #41 请求超时或收到非 200 响应 | 按结果未知处理，以同一合约号调用合约查询（#40）：返回 `SIGNFAIL` 或 `CONTRACT_NOT_EXIST` 时，以新的合约号重新签约；为 `SIGNING` 或 `NOTSIGN` 时稍后再次查询 |
+| 返回页查询到的 `result_code` 不是 `SIGNED` | 付款人尚未完成授权或签约未成功；之后收到签约状态通知时，以合约查询（#40）的结果为准 |
+| 付款人未授权即离开 | 合约不会生效；签约有效期届满后合约查询为 `SIGNFAIL`，平台不推送通知；重新签约时使用新的合约号 |
+
+## 流程：对账
+
+商户系统按日对账：次日起，按日期调用交易流水（#7），与商户系统的订单和退款逐笔核对；再按结算日调用结算记录（#8），核对该次结算包含的交易与划入商户银行账户的金额，`settle_from` / `settle_to` 为该次结算覆盖的交易日期范围。需要时，以订单列表（#6）按订单创建日期与状态补拉订单，以订单查询（#5）核实单笔订单。订单列表（#6）的金额**单位为元**（主单位小数），流水、结算与订单查询的金额为最小计价单位整数。
+
+```mermaid
+sequenceDiagram
+    participant M as 商户系统
+    participant A as 平台
+
+    Note over M,A: 次日起，逐日对账
+    M->>A: #35;7 [listTransactions]<br/>GET /gateway/partners/{partner_code}/transactions
+    A-->>M: { 流水列表 }
+    M->>M: 按 partner_order_id、partner_refund_id<br/>对应商户系统的订单与退款，核对 type 与金额
+    opt 按订单创建日期与状态补拉订单
+        loop 逐页查询，直至最后一页
+            M->>A: #35;6 [listOrders]<br/>GET /gateway/partners/{partner_code}/orders
+            A-->>M: { 订单列表, pagination }
+        end
+    end
+    opt 核实单笔订单
+        M->>A: #35;5 [getOrder]<br/>GET /gateway/partners/{partner_code}/orders/{order_id}
+        A-->>M: { result_code }
+    end
+    M->>A: #35;8 [listSettlements]<br/>GET /gateway/partners/{partner_code}/settlements
+    A-->>M: { settle_from, settle_to, 结算记录 }
+    M->>M: 核对结算记录中的交易条目与已核对的流水一致<br/>以 total_transfer 与银行入账核对
+```
+
+| 情形 | 商户系统的处理 |
+|---|---|
+| 流水中有商户系统未记录的订单或退款 | 流水包含该商户的付款、退款、退款失败回冲、返现与平台调整等交易记录，含未经本 API 发起的交易；以流水为准补记 |
+| 同一订单或退款对应多条流水 | 按 `partner_order_id` 或 `partner_refund_id` 合并后核对金额 |
+| 金额与商户系统的记录不一致 | 以 `total_amount`（所属订单的订单金额，订单币种）核对订单金额，以 `settle_amount`（结算币种）核对该条流水的金额；仍不一致时调用订单查询（#5）核实该单 |
+| 订单列表（#6）与流水、结算的金额单位不同 | 订单列表的金额为币种主单位小数，流水与结算为最小计价单位整数；核对时按各自单位换算 |
+| 订单在某日创建、次日支付 | 订单列表（#6）在创建日期下列出该单，交易流水（#7）在支付日期下列出 |
+| 结算记录包含多日的交易（`settle_from` 早于 `settle_to`） | 按 `settle_from` 至 `settle_to` 各日的流水合并核对 |
+| 结算记录含 `channel` 为 `System` 的平台调整条目 | 按该条目的 `remark` 核对 |
+| 结算记录以当天日期查询 | 返回 `INVALID_DATE`；结算记录只能按当天以前的结算日查询 |
+| 结算记录未返回 `settle_from`、`settle_to` 与 `settle_days` | 该日无结算 |
+| 查询超时或收到非 200 响应 | 稍后重新查询 |
+
+### 汇率查询
+
+汇率查询（#9）与按支付方式查询汇率（#10）均为单次调用。#10 返回 `wechat_rate`、`alipay_retail_rate`、`alipay_online_rate`（无值的字段不返回）；#9 返回微信汇率 `rate`。返回的汇率仅供参考，交易按成交时的实时汇率计算；单笔订单的成交汇率见订单查询（#5）的 `rate` 与交易流水（#7）的 `exchange_rate`。
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+document.getElementById('content').innerHTML = marked.parse(document.getElementById('src').textContent);
+document.querySelectorAll('#content h1,#content h2,#content h3,#content h4').forEach(h=>{if(!h.id)h.id=h.textContent.trim();});
+const jump=()=>{if(location.hash){const t=document.getElementById(decodeURIComponent(location.hash.slice(1)));if(t)t.scrollIntoView();}};
+document.querySelectorAll('code.language-mermaid').forEach(c=>{const d=document.createElement('div');d.className='mermaid';d.textContent=c.textContent;c.closest('pre').replaceWith(d);});
+mermaid.initialize({startOnLoad:false,theme:'neutral',sequence:{useMaxWidth:true}});
+mermaid.run({querySelector:'.mermaid'}).then(jump,jump);
+</script>
+</body></html>

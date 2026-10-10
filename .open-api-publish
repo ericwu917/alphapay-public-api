@@ -1,0 +1,3 @@
+# 本目录的 <lang>/ 子树与根 index.html 由 tools/publish-open-api-docs.sh 生成并在每次发布时重建;
+# 本文件是允许它写入的标记。下列语言目录归它管理:
+lang=zh
