@@ -130,7 +130,7 @@ flowchart LR
 
 ### 响应
 
-- 接口请求到达平台后，无论业务成败均返回 HTTP 200 与 JSON（支付页为浏览器入口，不适用本条，见「支付页地址的签名」），结果以 `return_code` 为准：`SUCCESS` 表示调用成功，其他值为错误码，`return_msg` 给出说明。
+- 接口请求到达平台后，无论业务成败均返回 HTTP 200 与 JSON（支付页为浏览器入口，不适用本条，见「支付页地址的签名」），结果以 `return_code` 为准：`SUCCESS` 表示调用成功，其他值为错误码，`return_msg` 给出说明。卡支付预下单（#53）的成功响应不带 `return_code`，直接返回 `order_id` 与 `pay_url`；其错误响应同本条。
 - 错误码可能扩展。商户系统应为未识别的错误码提供默认的失败处理分支。
 - 下单等接口在 `return_code` 为 `SUCCESS` 时另有 `result_code` 表示业务结果，例如订单已存在时为 `EXISTS`、付款码被扫处理中为 `PAYING`，取值见各接口。
 - 请求超时、网络中断或收到非 200 响应时，商户系统应按结果未知处理，调用订单查询（#5）、退款查询（#2）或合约查询（#40）确认，不直接判定失败。
@@ -147,7 +147,7 @@ flowchart LR
 
 ### 幂等与重试
 
-- **下单**：商户订单号（路径 `{order_id}`；卡支付预下单为请求体中的 `merchantOrderId`）在同一商户下唯一。用同一订单号重复下单不会新建订单：订单已支付返回 `ORDER_PAID`，已关闭返回 `ORDER_CLOSED`，处理中或同一订单号并发下单返回 `DUPLICATE_ORDER_ID`；其余情形（含请求内容与首次下单不同）返回该单的既有结果（`result_code` 为 `EXISTS`），订单内容以首次下单为准。
+- **下单**：商户订单号（路径 `{order_id}`；卡支付预下单为请求体中的 `merchantOrderId`）在同一商户下唯一。用同一订单号重复下单不会新建订单：订单已支付返回 `ORDER_PAID`，已关闭返回 `ORDER_CLOSED`，处理中或同一订单号并发下单返回 `DUPLICATE_ORDER_ID`；其余情形（含请求内容与首次下单不同）返回该单的既有结果（`result_code` 为 `EXISTS`；卡支付预下单返回既有订单的 `order_id` 与 `pay_url`，不带 `result_code`），订单内容以首次下单为准。
 - **订单有效期**：未支付订单默认 5 分钟后失效，可在商户后台调整。以失效订单的订单号再次下单不会重新开单，重新收款应使用新的商户订单号。
 - **退款**：商户退款号（路径 `{refund_id}`）是退款的幂等键，在订单所属商户范围内唯一，一个退款号只对应一笔退款。以同一退款号重试不会重复退款，返回首次受理的结果，响应另带该退款当前的 `result_code`；退款号已用于其他订单，或金额与首次提交不一致，返回 `REFUND_MISMATCH`。退款失败后以新的退款号重新发起。
 - **委托代扣签约**：商户合约号（路径 `{contract_no}`）在同一商户下唯一，一个合约号只能提交一次签约。以同一合约号重复签约返回 `DUPLICATE_ORDER_ID`，不返回首次结果；签约未能发起或签约失败后，以新的合约号重新签约。
@@ -511,7 +511,7 @@ sequenceDiagram
     U->>M: 选择银行卡付款，提交订单
     alt 银行卡
         M->>A: #35;53 [createCardOrder]<br/>POST /pay/thirdCard/{partner_code}/preOrder
-        A-->>M: return_code 为 SUCCESS<br/>{ pay_url }
+        A-->>M: { order_id, pay_url }
         M-->>U: 浏览器照原样打开 pay_url，可追加 redirect
         U->>A: #35;52 [openCardPaymentPage]<br/>GET /creditCardGateway
     else 银联卡

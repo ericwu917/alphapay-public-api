@@ -104,6 +104,7 @@ paths:
         退款最终结果以退款查询接口的结果为准，退款通知用于触发查询。
         退款进入平台审核时 `resultCode` 为 `REFUND_NEED_REVIEW`、`resultStatus` 为 `U`，响应含 `refundId`；
         审核结果以退款查询为准；请求传入 `notifyUrl` 时，审核通过且退款被渠道受理后推送退款通知。
+        退款已建立、渠道尚未给出受理结论时 `resultCode` 为 `REFUND_IN_PROCESS`、`resultStatus` 为 `U`，响应含 `refundId`；最终结果以退款查询为准。
         处理结果未知时（如平台内部错误）`resultStatus` 为 `U`，以退款查询确认。
 
         退款被拒时 `resultStatus` 为 `F`，常见结果码：
@@ -518,6 +519,7 @@ components:
             `INVALID_METHOD_TYPE`（支付方式名称无效，区分大小写）/ `INVALID_PAYMENT_CODE`（付款码无效）/
             `EXIST_PROCESSING_REFUND` / `REFUND_VALID_DATE_EXCEED`（超出最长 1 年的可退期限）/
             `REFUND_NEED_REVIEW`（退款待审核，此时 `resultStatus` 为 `U`）/
+            `REFUND_IN_PROCESS`（退款已建立、渠道尚未给出受理结论，此时 `resultStatus` 为 `U`）/
             `INVALID_REFUND_AMOUNT` / `REFUND_NOT_ENOUGH_BALANCE` / `FULL_REFUND_COMPLETED` /
             `ORDER_NOT_EXIST` / `ORDER_CLOSED` / `ORDER_NOT_PAID` / `REFUND_MISMATCH` / `ORDER_CANCEL_FAILED`。
 
@@ -1113,7 +1115,7 @@ components:
               （可直接作 `img` 的 `src`）；`payUrl` 为 AlphaPay 支付页地址，可让浏览器跳转进入支付页。
             - `OFFLINE_QRCODE`：以 `paymentUrl` / `paymentQRImage` 在收银屏展示二维码供付款人扫码。
             - `JSAPI` / `ONLINE_WAP`：浏览器跳转 `payUrl` 完成支付。
-            - `NATIVE_JSAPI`：`sdkParams` 交给 JSBridge 发起支付；同时返回 `payUrl`（AlphaPay 支付页地址）。
+            - `NATIVE_JSAPI`：`sdkParams` 交给 JSBridge 发起支付；不返回 `payUrl`。
             - `APP` / `MINI_APP`：返回 `sdkParams`，交给对应 SDK / 小程序发起支付。
             - `CREDIT_CARD`：需要 3DS 验证时返回 `threeDSMethodUrl` 与 `threeDSMethodData`，否则不返回支付凭据。
           properties:
@@ -1190,7 +1192,7 @@ components:
         refundId:
           type: string
           description: |
-            平台退款单号。退款受理、进入审核（`resultCode` 为 `REFUND_NEED_REVIEW`）或因余额不足失败（`resultCode` 为 `REFUND_NOT_ENOUGH_BALANCE`）时返回。
+            平台退款单号。退款受理、进入审核（`resultCode` 为 `REFUND_NEED_REVIEW`）、渠道尚未给出受理结论（`resultStatus` 为 `U` 且 `resultCode` 为 `REFUND_IN_PROCESS`）或因余额不足失败（`resultCode` 为 `REFUND_NOT_ENOUGH_BALANCE`）时返回。
         paymentId:
           type: string
           description: 平台单号（原支付单，回显）
@@ -1288,6 +1290,7 @@ components:
               type: string
             redirectUrl:
               type: string
+              description: 付款后跳回的商户页面地址；下单时传入时返回
         paymentCreateTime:
           type: string
           format: date-time
@@ -1325,8 +1328,7 @@ components:
             - $ref: '#/components/schemas/SettlementAmountResp'
           description: |
             该笔订单的实际结算金额，以商户结算币种计。
-            **订单已支付时始终返回**（`paymentStatus` 为 `SUCCESS` / `PARTIAL_REFUND` / `FULL_REFUND`）；
-            未支付的订单不返回本字段。支付成功通知中始终包含本字段。
+            有值时返回；未支付的订单不返回本字段。
     InquiryRefundRequest:
       type: object
       description: '`refundId` 与 `refundRequestId` 至少传一个；都传时按 `refundId` 查。'
@@ -1389,8 +1391,7 @@ components:
           description: |
             本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
             取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
-            **退款被支付渠道受理后始终返回**，之后退款失败时仍保留该值；
-            尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。
+            退款被支付渠道受理后有值时返回；受理后退款失败仍保留该值。尚未被受理、或未被受理即失败的退款不返回本字段。
     QueryTransactionsRequest:
       type: object
       required:

@@ -972,7 +972,9 @@ paths:
         **金额**：本接口的 `amount` 与 `tipAmount` 以币种主单位的十进制数表示（如 `12.34`），
         与本 API 其他下单接口的最小计价单位整数不同。
 
-        **商户订单号**：`merchantOrderId` 的唯一性与重复下单规则同概览「下单通用规则」所述。
+        **商户订单号**：`merchantOrderId` 的唯一性与重复下单规则同概览「下单通用规则」所述；
+        本接口的**成功响应**不含 `return_code` / `result_code`：以同一商户订单号重复下单时返回既有订单的
+        `order_id` 与 `pay_url`，不另标 `EXISTS`；错误响应仍为通用错误信封（见下方错误码）。
 
         **支付页**：`pay_url` 指向卡支付收银台（见 `openCardPaymentPage`）。跳转前商户系统可在其上追加
         `redirect`（付款成功后跳回的商户页面，URL 编码）。跳回不代表支付成功，商户系统应以订单查询结果为准。
@@ -1456,7 +1458,7 @@ paths:
         已签约的合约解约后查询状态为 `TERMINATING`，解约完成后为 `TERMINATED`；
         尚未签约的合约解约后直接变为 `TERMINATED`。对已处于终态的合约再次解约同样返回成功。
 
-        `termination_note` 为解约原因，必填，最长 255 字符。
+        `termination_note` 为解约原因，必填，渠道上限 256 字符，缺或超长返回 `PARAM_INVALID`。
 
         **错误码**（`return_code`）：合约不存在或不属于本商户返回 `CONTRACT_NOT_EXIST`；以及 `GatewayErrorV1` 所列通用码。
       parameters:
@@ -2078,13 +2080,11 @@ components:
         partner_order_id:
           type: string
         gateway:
-          type:
-            - string
-            - 'null'
+          type: string
           description: |
             下单来源标签（人类可读字符串）：`Retail In-Store`（官方 POS / App）/ `QR Code`（商户静态码）/
             `Online API`（扫码下单 API）/ `WeChat HTML5`（JSAPI）/ `Retail API`（零售 API）/ `Mobile H5`（H5 API）/
-            `Third Party Gateway` / `APP`（SDK API）/ `Miniprogram`（小程序 API）。原生码等其余来源本字段为 `null`。
+            `Third Party Gateway` / `APP`（SDK API）/ `Miniprogram`（小程序 API）。其余来源不返回本字段。
         partner_code:
           type: string
         partner_name:
@@ -2665,7 +2665,6 @@ components:
         （`result_code` 为支付状态，不是订单创建结果）。
         新建订单返回 `PAYING`（已受理、处理中）；同步得出结果时为 `PAY_SUCCESS` 或 `PAY_FAIL`。最终状态以订单查询的结果为准。
         以同一订单号重复下单时按概览「下单通用规则」处理，其中返回既有订单的情形返回 `EXISTS`。
-        `PAYING` 响应同时返回 `tip_fee`、`input_fee`、`available_amount` 与 `customer_id`。
       required:
         - return_code
         - result_code
@@ -2717,16 +2716,16 @@ components:
           type: string
         tip_fee:
           type: integer
-          description: 小费金额（最小货币单位整数）
+          description: 小费金额（最小货币单位整数；有值时返回）
         input_fee:
           type: integer
-          description: 商户录入金额（最小货币单位整数）
+          description: 商户录入金额（最小货币单位整数；有值时返回）
         available_amount:
           type: integer
-          description: 当前可发起退款额（最小货币单位整数）
+          description: 当前可发起退款额（最小货币单位整数；有值时返回）
         customer_id:
           type: string
-          description: 付款人在支付渠道的用户标识
+          description: 付款人在支付渠道的用户标识（有值时返回）
     CardPreOrderRequestV1:
       type: object
       description: 卡支付预下单请求。金额以币种主单位的十进制数表示。
@@ -2766,20 +2765,9 @@ components:
       additionalProperties: true
       description: 卡支付预下单响应。
       required:
-        - return_code
         - order_id
         - pay_url
       properties:
-        return_code:
-          type: string
-          const: SUCCESS
-          description: 固定为 `SUCCESS`
-        result_code:
-          type: string
-          enum:
-            - SUCCESS
-            - EXISTS
-          description: 新单 `SUCCESS`；以同一商户订单号重复下单且返回既有订单时为 `EXISTS`。
         order_id:
           type: string
           description: 平台订单号
@@ -2889,8 +2877,8 @@ components:
           description: 商户合约号，可不传，以路径参数 `contract_no` 为准
         termination_note:
           type: string
-          maxLength: 255
-          description: 解约原因
+          maxLength: 256
+          description: 解约原因，渠道上限 256 字符，超出返回 `PARAM_INVALID`
     QueryContractOrderV1:
       type: object
       description: 合约查询与 App 签约的响应

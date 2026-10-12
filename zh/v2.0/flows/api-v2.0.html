@@ -96,7 +96,7 @@ flowchart LR
 | `ONLINE_WAP` | `payUrl` | 手机浏览器跳转 `payUrl` 完成付款 |
 | `JSAPI` | `payUrl` | 在微信或支付宝内的网页中跳转 `payUrl` 完成付款 |
 | `NATIVE_QRCODE` | `payUrl`、`paymentUrl` | 以 `payUrl` 生成二维码；支付方式为支付宝时，手机浏览器可跳转 `paymentUrl` 唤起支付宝 App |
-| `NATIVE_JSAPI` | `sdkParams`、`payUrl` | `sdkParams` 原样交给微信或支付宝的 JSBridge 调起支付；`payUrl` 为平台支付页地址 |
+| `NATIVE_JSAPI` | `sdkParams` | `sdkParams` 原样交给微信或支付宝的 JSBridge 调起支付 |
 | `APP` | `sdkParams` | 原样交给钱包 SDK 调起支付；该值可能为 JSON 对象或字符串 |
 | `MINI_APP` | `sdkParams` | 原样交给小程序支付接口调起支付 |
 | `CREDIT_CARD` | `result`、`paymentInfo.threeDSMethodUrl`、`paymentInfo.threeDSMethodData` | `resultStatus` 为 `U` 表示已受理、尚未得出扣款结果，以订单查询（#4）确认；已同步得出结果时为 `S` 或 `F`；返回 3DS 验证要素时，先在付款人浏览器中完成验证 |
@@ -436,7 +436,7 @@ sequenceDiagram
 
 ## 流程：在钱包或 App 内拉起
 
-适用 `NATIVE_JSAPI`、`APP`、`MINI_APP`。下单响应的 `paymentInfo.sdkParams` 原样交给钱包的 JSBridge、SDK 或小程序支付接口调起支付，该值可能为 JSON 对象或字符串；`NATIVE_JSAPI` 同时返回平台支付页地址 `paymentInfo.payUrl`。
+适用 `NATIVE_JSAPI`、`APP`、`MINI_APP`。下单响应的 `paymentInfo.sdkParams` 原样交给钱包的 JSBridge、SDK 或小程序支付接口调起支付，该值可能为 JSON 对象或字符串。
 
 ```mermaid
 sequenceDiagram
@@ -447,7 +447,7 @@ sequenceDiagram
 
     U->>M: 在钱包内网页、商户 App 或小程序中提交订单
     M->>A: #35;1 [createPayment]<br/>POST /payments/pay<br/>scenarioCode 为 NATIVE_JSAPI、APP 或 MINI_APP
-    A-->>M: { paymentId, paymentInfo.sdkParams }<br/>NATIVE_JSAPI 另含 paymentInfo.payUrl
+    A-->>M: { paymentId, paymentInfo.sdkParams }
     alt NATIVE_JSAPI
         M->>C: 以 sdkParams 经 JSBridge 调起支付
     else APP

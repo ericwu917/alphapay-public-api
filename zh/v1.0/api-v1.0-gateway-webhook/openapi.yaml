@@ -10,7 +10,7 @@ info:
     支付通知以平台订单号识别，退款通知以平台退款号识别，委托代扣签约状态通知以 `data` 中的 `clientContractNo` 与 `state` 识别。
 
     **金额单位**：通知中的金额以给定币种的最小计价单位整数表示（对有两位小数的币种，`100` 表示 `1.00`），
-    支付通知的 `clearing_amount` 例外，**单位为元**（币种主单位小数，如 `10.50`）。
+    支付通知的 `clearing_amount` 例外，以元（币种主单位小数）表示，见该字段说明。
 
     **订单金额与状态以订单查询接口的结果为准，退款结果以退款查询接口的结果为准，合约状态以合约查询接口的结果为准；通知用于触发查询，不作为最终依据。**
 servers:
@@ -36,7 +36,7 @@ webhooks:
       tags:
         - payment-notify
       operationId: onPaymentSucceeded
-      summary: 支付成功通知（clearing_amount 金额单位：元）
+      summary: 支付成功通知
       description: |
         下单或委托代扣扣款时传入 `notify_url`、且订单支付**成功**时推送，每笔订单推送一条支付通知。
         支付失败或未支付即关闭的订单不推送，其状态以订单查询接口的结果为准。
@@ -155,8 +155,6 @@ components:
         - channel
         - create_time
         - pay_time
-        - clearing_amount
-        - clearing_currency
       properties:
         time:
           type: string
@@ -209,10 +207,10 @@ components:
           description: 支付完成时间
         clearing_amount:
           type: number
-          description: '**单位：元（币种主单位小数）**。结算金额，即该笔订单以商户结算币种计的实际结算金额，以主单位十进制数表示（不是最小计价单位整数）。始终返回'
+          description: '**单位：元（币种主单位小数）**。结算金额，即该笔订单以商户结算币种计的实际结算金额，以主单位十进制数表示（不是最小计价单位整数）。有值时返回'
         clearing_currency:
           type: string
-          description: 结算币种（与 `clearing_amount` 成对，恒返回）
+          description: 结算币种（与 `clearing_amount` 成对，有值时返回）
     RefundNotification:
       type: object
       description: |
@@ -288,10 +286,10 @@ components:
             | 键 | 类型 | 含义 | 出现条件 |
             |---|---|---|---|
             | `clientContractNo` | string | 商户合约号，即签约请求的路径参数 `contract_no` | 始终出现 |
-            | `outContractCode` | string | 平台合约号，与合约查询响应的 `contract_no` 相同 | 始终出现 |
+            | `outContractCode` | string | 平台合约号，与合约查询响应的 `contract_no` 相同 | 有值时出现 |
             | `contractId` | string | 渠道合约号 | 合约生效后出现 |
             | `planId` | integer | 渠道侧代扣模板号，即签约请求的 `plan_id` | 渠道有该参数时出现 |
-            | `state` | string | 本次变化后的合约状态：`SIGNED`（签约成功）、`SIGNFAIL`（签约失败）或 `TERMINATED`（解约），取值见 `ContractStatusV1` | 始终出现 |
+            | `state` | string | 本次变化后的合约状态：`SIGNED`（签约成功）、`SIGNFAIL`（签约失败）或 `TERMINATED`（解约），取值见 `ContractStatusV1` | 有值时出现 |
             | `openid` | string | 渠道侧付款人标识 | 合约生效后出现 |
             | `userDisplayName` | string | 付款人展示名，即签约请求的 `description` | 有值时出现 |
             | `signedTime` | string | 签约生效时间（ISO 8601 格式，带时区偏移） | 合约生效后出现 |
@@ -305,8 +303,6 @@ components:
           description: UTC 毫秒时间戳（字符串形态）
         nonce_str:
           type: string
-          minLength: 10
-          maxLength: 10
           description: 随机串（防重放）
         sign:
           type: string
@@ -319,8 +315,6 @@ components:
         未列出的键应忽略。
       required:
         - clientContractNo
-        - outContractCode
-        - state
       properties:
         clientContractNo:
           type: string

@@ -62,7 +62,6 @@ webhooks:
                 - paymentExpireTime
                 - paymentTime
                 - scenarioCode
-                - settlementAmount
               properties:
                 order:
                   required:
@@ -118,8 +117,6 @@ webhooks:
                 - paymentId
                 - refund
                 - refundStatus
-                - refundTime
-                - settlementAmount
               properties:
                 refund:
                   required:
@@ -278,6 +275,7 @@ components:
               type: string
             redirectUrl:
               type: string
+              description: 付款后跳回的商户页面地址；下单时传入时返回
         paymentCreateTime:
           type: string
           format: date-time
@@ -315,8 +313,7 @@ components:
             - $ref: '#/components/schemas/SettlementAmountResp'
           description: |
             该笔订单的实际结算金额，以商户结算币种计。
-            **订单已支付时始终返回**（`paymentStatus` 为 `SUCCESS` / `PARTIAL_REFUND` / `FULL_REFUND`）；
-            未支付的订单不返回本字段。支付成功通知中始终包含本字段。
+            有值时返回；未支付的订单不返回本字段。
     RefundAmountResp:
       type: object
       properties:
@@ -374,5 +371,4 @@ components:
           description: |
             本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
             取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
-            **退款被支付渠道受理后始终返回**，之后退款失败时仍保留该值；
-            尚未被受理、或未被受理即失败的退款不返回本字段。退款通知中始终包含本字段。
+            退款被支付渠道受理后有值时返回；受理后退款失败仍保留该值。尚未被受理、或未被受理即失败的退款不返回本字段。
