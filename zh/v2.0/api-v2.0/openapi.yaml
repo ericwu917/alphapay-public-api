@@ -1124,9 +1124,6 @@ components:
             paymentQRImage:
               type: string
             sdkParams:
-              type:
-                - object
-                - string
               description: |
                 SDK / JSBridge 调起参数，**按场景与支付方式为 JSON 对象或字符串**
                 （如 `APP` 场景银联返回字符串，即传给 `UPPayAssistEx.startPay` 的 `tn`）。
