@@ -206,6 +206,34 @@ components:
             resultMessage:
               type: string
               description: 可选
+    ScenarioCode:
+      type: string
+      enum:
+        - APP
+        - ONLINE_WAP
+        - JSAPI
+        - MINI_APP
+        - NATIVE_QRCODE
+        - NATIVE_JSAPI
+        - ONLINE_QRCODE
+        - ONLINE_WEB
+        - OFFLINE_QRCODE
+        - OFFLINE
+        - CREDIT_CARD
+      description: |
+        支付场景：
+
+        - `ONLINE_QRCODE`：浏览器扫码，支付宝、微信、银联；返回二维码与支付页地址。
+        - `ONLINE_WEB`：PC 浏览器，支付宝、银联；返回支付页地址。
+        - `NATIVE_QRCODE`：浏览器扫码，支付宝、微信；返回钱包原生码。
+        - `CREDIT_CARD`：浏览器，银行卡；仅需 3DS 验证时返回验证要素。
+        - `ONLINE_WAP`：移动端网页，支付宝、微信、银联；返回支付页地址。
+        - `JSAPI`：微信或支付宝内的网页；返回支付页地址。
+        - `NATIVE_JSAPI`：微信或支付宝内的网页；返回 JSBridge 调起参数。
+        - `APP`：商户 App，支付宝、微信、银联；返回 SDK 调起参数。
+        - `MINI_APP`：微信或支付宝小程序；返回调起参数。
+        - `OFFLINE_QRCODE`：门店收银屏展示二维码，支付宝、微信、银联；返回二维码。
+        - `OFFLINE`：门店扫付款人付款码，支付宝、微信、银联；不返回支付凭据。
     AmountValue:
       type: string
       pattern: ^\d+$
@@ -214,50 +242,52 @@ components:
     CurrencyCode:
       type: string
       pattern: ^[A-Z]{3}$
-      description: |
-        币种代码（ISO 4217 三位字母码）。银行卡类场景（`CREDIT_CARD` 与 Apple Pay）为商户结算币种，
-        其他场景为标价币种。取值以商户开通情况为准。
+      description: 币种代码（ISO 4217 三位字母码）。是标价币种还是商户结算币种见引用处说明；取值以商户开通情况为准。
     AmountResp:
       type: object
+      description: 订单金额（响应）。`currency` 在银行卡类场景（`CREDIT_CARD` 与 Apple Pay）为商户结算币种，其他场景为标价币种。
       properties:
         value:
           $ref: '#/components/schemas/AmountValue'
         currency:
           $ref: '#/components/schemas/CurrencyCode'
-    SettlementCurrency:
+    OrderPaymentStatus:
       type: string
-      pattern: ^[A-Z]{3}$
+      enum:
+        - PAYMENT_IN_PROCESS
+        - CLOSED
+        - FAILED
+        - SUCCESS
+        - PARTIAL_REFUND
+        - FULL_REFUND
       description: |
-        **结算币种**（ISO 4217 三位字母码），即商户入账与结算所用币种；每个商户有且只有一个结算币种，入驻时确定。
-    SettlementAmountResp:
+        订单状态：
+
+        - `PAYMENT_IN_PROCESS`：等待支付。
+        - `CLOSED`：已关闭。
+        - `FAILED`：平台未受理或支付失败，订单不可再支付；如需重新收款，商户系统应以新的 `paymentRequestId` 重新下单。
+        - `SUCCESS`：支付成功。
+        - `PARTIAL_REFUND`：支付成功，已部分退款。
+        - `FULL_REFUND`：支付成功，已全额退款。
+    Amount:
       type: object
-      description: 结算金额，以商户结算币种计；本对象出现时金额与币种均返回。
-      required:
-        - value
-        - currency
+      description: 金额：给定币种最小计价单位的整数串，加币种代码。
       properties:
         value:
           $ref: '#/components/schemas/AmountValue'
         currency:
-          $ref: '#/components/schemas/SettlementCurrency'
+          $ref: '#/components/schemas/CurrencyCode'
+      required:
+        - value
+        - currency
     InquiryPaymentBody:
       description: 订单查询的业务字段（不含 `result`）。支付成功通知的 body 使用相同结构。
       type: object
+      x-parent: true
       properties:
         scenarioCode:
-          type: string
-          enum:
-            - APP
-            - ONLINE_WAP
-            - JSAPI
-            - MINI_APP
-            - NATIVE_QRCODE
-            - NATIVE_JSAPI
-            - ONLINE_QRCODE
-            - ONLINE_WEB
-            - OFFLINE_QRCODE
-            - OFFLINE
-            - CREDIT_CARD
+          allOf:
+            - $ref: '#/components/schemas/ScenarioCode'
           description: 支付场景，按订单的支付场景返回；无对应场景的订单不返回本字段。
         paymentRequestId:
           type: string
@@ -291,7 +321,8 @@ components:
         paymentId:
           type: string
         paymentStatus:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/OrderPaymentStatus'
           description: |
             订单状态：
 
@@ -301,33 +332,16 @@ components:
             - `SUCCESS`：支付成功。
             - `PARTIAL_REFUND`：支付成功，已部分退款。
             - `FULL_REFUND`：支付成功，已全额退款。
-          enum:
-            - PAYMENT_IN_PROCESS
-            - CLOSED
-            - FAILED
-            - SUCCESS
-            - PARTIAL_REFUND
-            - FULL_REFUND
         settlementAmount:
           allOf:
-            - $ref: '#/components/schemas/SettlementAmountResp'
+            - $ref: '#/components/schemas/Amount'
           description: |
             该笔订单的实际结算金额，以商户结算币种计。
-            有值时返回；未支付的订单不返回本字段。
-    RefundAmountResp:
-      type: object
-      properties:
-        value:
-          $ref: '#/components/schemas/AmountValue'
-        currency:
-          $ref: '#/components/schemas/CurrencyCode'
-      required:
-        - value
-        - currency
+            有值时返回，返回时金额与币种均返回；未支付的订单不返回本字段。
     InquiryRefundBody:
       description: 退款查询的业务字段（不含 `result`）。退款通知的 body 使用相同结构。
       type: object
-      additionalProperties: true
+      x-parent: true
       properties:
         paymentId:
           type: string
@@ -360,15 +374,15 @@ components:
           type: object
           properties:
             refundAmount:
-              $ref: '#/components/schemas/RefundAmountResp'
+              $ref: '#/components/schemas/Amount'
             description:
               type: string
             notifyUrl:
               type: string
         settlementAmount:
           allOf:
-            - $ref: '#/components/schemas/SettlementAmountResp'
+            - $ref: '#/components/schemas/Amount'
           description: |
             本笔退款以商户结算币种计的金额：按原订单结算金额乘以本次退款金额占订单金额的比例计算，
             取整到结算币种的最小计价单位；同一订单全额退款后，各笔退款的本字段之和等于原订单结算金额（取整差额计入最后一笔）。
-            退款被支付渠道受理后有值时返回；受理后退款失败仍保留该值。尚未被受理、或未被受理即失败的退款不返回本字段。
+            退款被支付渠道受理后有值时返回，返回时金额与币种均返回；受理后退款失败仍保留该值。尚未被受理、或未被受理即失败的退款不返回本字段。

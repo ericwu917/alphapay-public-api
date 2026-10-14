@@ -249,7 +249,7 @@ curl --request POST 'https://{host}/api/v2.0/payments/pay' \
 ### 时间窗与防重放
 
 - `Request-Time` 与平台时间相差不得超过 5 分钟，否则返回 `SIGN_TIMEOUT`。所有接口均校验，商户服务器应保持时钟同步。
-- 同一 `Merchant-Code` 下同一组 `Request-Time` + `Nonce` 至多受理一次，再次使用返回 `SIGN_EXPIRED`。每个请求（含重试）均应使用新的 `Request-Time` 与 `Nonce`。
+- 同一 `Merchant-Code` 下同一组 `Request-Time` + `Nonce` 再次出现：与首次相同的请求（同方法、同路径与 query 字符串、同请求体）不因此被拒绝、按该接口自身语义处理；不同的请求返回 `SIGN_EXPIRED`。每个新请求使用新的 `Request-Time` 与 `Nonce`；原样重试同一请求可沿用。
 - 签名验证不通过返回 `INVALID_SIGN`。
 
 ### 验证响应签名
